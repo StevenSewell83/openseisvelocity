@@ -249,6 +249,12 @@ class DataSelectionConfig(_Base):
         min_length=3,
         example="[[-38.60, 176.15], [-38.60, 176.25], [-38.50, 176.25], [-38.50, 176.15]]",
     )
+    region_geojson: Path | None = F(
+        None,
+        "GeoJSON file (Polygon/MultiPolygon, lon/lat, holes allowed, optionally inside a "
+        "Feature/FeatureCollection). Used instead of region_polygon when set.",
+        path=True,
+    )
     depth_km: Bounds = F((-1.0, 8.0), "[min, max] event depth in km (positive down).")
     min_p: int = F(6, "Minimum P picks per event.", ge=0)
     min_s: int = F(0, "Minimum S picks per event.", ge=0)
