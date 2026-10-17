@@ -54,6 +54,7 @@ __all__ = [
     "parse_velest_lon",
     "radius_to_depth",
     "spherical_distance_km",
+    "to_sea_level_depth",
     "velest_depth_from_file",
     "velest_depth_to_file",
     "velest_elevation_field",
@@ -109,6 +110,54 @@ def depth_km_to_elevation_m(depth_km: ArrayLike) -> float | Array:
     """Convert depth below sea level (km, positive down) to elevation (m, positive up)."""
     a = _arr(depth_km)
     return _out(-a * 1000.0, a.ndim == 0)
+
+
+DepthDatum = Literal["sea_level", "surface", "reference"]
+
+
+def to_sea_level_depth(
+    depth_km: ArrayLike,
+    datum: DepthDatum = "sea_level",
+    reference_elevation_m: ArrayLike | None = None,
+    surface_elevation_m: ArrayLike | None = None,
+) -> float | Array:
+    """Convert depths given relative to ``datum`` to km below sea level (positive down).
+
+    Parameters
+    ----------
+    depth_km
+        Depth(s) below the datum, km, positive down.
+    datum
+        ``"sea_level"``: no change; ``"surface"``: depth below the local ground surface
+        (needs ``surface_elevation_m``, one value per depth or a scalar);
+        ``"reference"``: depth below the fixed elevation ``reference_elevation_m``.
+    reference_elevation_m, surface_elevation_m
+        Elevation(s) in metres above sea level (positive up) of the datum.
+
+    Returns
+    -------
+    float or ndarray
+        ``depth_km - elevation_m / 1000`` (negative means above sea level).  NaN
+        surface elevations give NaN depths.
+    """
+    a = _arr(depth_km)
+    if datum == "sea_level":
+        return _out(a.copy(), a.ndim == 0)
+    if datum == "reference":
+        if reference_elevation_m is None:
+            raise ValueError("reference_elevation_m is required for datum 'reference'")
+        elev = _arr(reference_elevation_m)
+    elif datum == "surface":
+        if surface_elevation_m is None:
+            raise ValueError(
+                "surface_elevation_m is required for datum 'surface' "
+                "(interpolate station elevations or use a DEM)"
+            )
+        elev = _arr(surface_elevation_m)
+    else:
+        raise ValueError(f"unknown depth datum {datum!r}; use sea_level, surface or reference")
+    out = a - elev / 1000.0
+    return _out(out, out.ndim == 0)
 
 
 def borehole_sensor_elevation_m(

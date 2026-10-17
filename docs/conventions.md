@@ -50,6 +50,40 @@ All references below were verified in the vendored sources / manuals:
   surface (`velest.f:1859`). Station z is `-elev/1000`; the top of model layer 2 must not
   coincide with a station depth (UG p. 20: put it at `+0.05` km if elevations are not used).
 
+## Depth datum
+
+Catalogue depths (QuakeML/NLLoc) may be relative to sea level, to the local ground
+surface, or to a fixed reference elevation (e.g. an NLLoc grid top above sea level).
+`coordinates.depth_datum` (`sea_level` default | `surface` | `reference` with
+`coordinates.reference_elevation_m`) states which one the catalogue uses. Stage 1 converts
+with `osv.coords.to_sea_level_depth` / `osv.data.datum.apply_depth_datum`, which add the
+column **`depth_km_bsl`** (km below sea level, positive down, negative above sea level; the
+source datum is recorded in `df.attrs["depth_datum"]`). `depth_km_bsl = depth_km -
+elevation_of_datum_m / 1000`. **All later stages use `depth_km_bsl` only**; the raw
+`depth_km` is kept for provenance.
+
+Consistent consumption (writers must follow this):
+
+* **VELEST**: write `depth_km_bsl` as the CNV depth with `zshift = 0` and model layer
+  depths measured from sea level; write station elevations (integer m, positive up) in the
+  `.sta` with `iuseelev = 1` so station z = `-elev/1000` is on the same datum. If the user
+  prefers `iuseelev = 0` (all stations at z = 0) instead, use
+  `osv.coords.velest_zshift_for_reference_elevation` so depths and the model share a
+  reference elevation, and record it in the manifest. Read results back by subtracting
+  `zshift` (VELEST writes the internal depth).
+* **FMTOMO**: `sources.in` depth = `depth_km_bsl`; receivers depth = `-elevation_m/1000`
+  (`osv.coords.fmtomo_receiver_depth_km`). Radius is `6371 - depth`, so with all depths
+  below the 6371 km sphere the sphere is sea level; the model top (interfaces/propgrid)
+  must lie above the highest receiver/event (negative depth).
+* Do not mix datums: a catalogue with `surface` datum needs surface elevations at the
+  epicentres (station interpolation or DEM) before it can be used.
+
+Dataset note (RK-NM): the NLLoc control files in `/home/steve/seismic/nlloc` use
+`TRANS LAMBERT WGS-84 ...  0.0` and `VGGRID 200 200 100 0.0 -50.0 -0.6 0.25 ...`, i.e. the
+grid z-origin is -0.6 km (grid top 0.6 km **above sea level**, depth axis referenced to sea
+level, no vertical shift), `LOCGRID` has the same origin, and `GTSRCE` elevations are km
+above sea level. The catalogue depths therefore are below sea level: default `sea_level`.
+
 ## Legacy NZ files with `W` longitudes: a consistent mirror
 
 The legacy Ngatamariki files (`velest/MonteCarlo/nmstats.sta`, `*.cnv`, `velest.cmn`) contain

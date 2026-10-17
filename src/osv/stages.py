@@ -290,6 +290,15 @@ class StageContext:
         self.report_path = self.stage_dir / "report.html"
         self.logger = logging.getLogger(f"osv.stage.{stage.name}")
         self.checks: list[dict[str, Any]] = []
+        #: Key-value pairs shown in the report's summary table (stored in the manifest).
+        self.summary: dict[str, Any] = {}
+
+    @property
+    def figures(self) -> Any:
+        """`osv.plotting.registry.FigureRegistry`: ``ctx.figures.save(fig, name, caption)``."""
+        from osv.plotting.registry import figures_for
+
+        return figures_for(self)
 
     @property
     def n_jobs(self) -> int:
@@ -466,6 +475,16 @@ def _output_records(ctx: StageContext, stage: Stage) -> list[dict[str, Any]]:
     return recs
 
 
+def render_report(ctx: StageContext) -> None:
+    """Render ``report.html`` from the manifest and figures; never raises."""
+    try:
+        from osv.report.html import render_stage_report
+
+        render_stage_report(ctx.stage_dir)
+    except Exception:  # a broken report must not fail the stage
+        logger.warning("Could not render %s", ctx.report_path, exc_info=True)
+
+
 def _run_stage(cfg: OSVConfig, stage: Stage, project_dir: Path) -> None:
     ctx = StageContext(cfg, stage, project_dir)
     ctx.prepare_dirs()
@@ -499,10 +518,12 @@ def _run_stage(cfg: OSVConfig, stage: Stage, project_dir: Path) -> None:
 
             manifest["tools"] = tool_versions(stage.tools)
         manifest["checks"] = ctx.checks
+        manifest["summary"] = ctx.summary
         manifest["status"] = COMPLETE
     except Exception as exc:
         manifest["status"] = FAILED
         manifest["checks"] = ctx.checks
+        manifest["summary"] = ctx.summary
         manifest["error"] = {
             "type": type(exc).__name__,
             "message": str(exc),
@@ -511,10 +532,12 @@ def _run_stage(cfg: OSVConfig, stage: Stage, project_dir: Path) -> None:
         manifest["finished"] = _now()
         manifest["wall_time_s"] = round(time.monotonic() - t0, 3)
         _write_json(ctx.stage_dir / MANIFEST_NAME, manifest)
+        render_report(ctx)
         raise StageFailed(stage.name, f"{type(exc).__name__}: {exc}", ctx.stage_dir) from exc
     manifest["finished"] = _now()
     manifest["wall_time_s"] = round(time.monotonic() - t0, 3)
     _write_json(ctx.stage_dir / MANIFEST_NAME, manifest)
+    render_report(ctx)
 
 
 def select_stages(
@@ -609,3 +632,4 @@ def plot_only(cfg: OSVConfig, stage: str, project_dir: Path | None = None) -> No
         inst.plot(ctx)
     m["plotted"] = _now()
     _write_json(ctx.stage_dir / MANIFEST_NAME, m)
+    render_report(ctx)

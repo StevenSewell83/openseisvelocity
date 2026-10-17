@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>osv project</title>
+{% include "_style.html" %}
+</head><body>
+<h1>openSeisVelocity project</h1>
+<p class="meta">{{ workdir }}</p>
+<table><tr><th>Stage</th><th>Status</th><th>QC</th><th>Wall time (s)</th><th>Finished</th><th>Report</th></tr>
+{% for r in rows %}
+<tr><td>{{ r.dir }}</td><td><span class="badge {{ r.status | replace(' ', '-') }}">{{ r.status }}</span></td>
+<td>{% if r.n_fail %}<span class="badge fail">{{ r.n_fail }} fail</span> {% endif %}{% if r.n_warn %}<span class="badge warn">{{ r.n_warn }} warn</span>{% endif %}</td>
+<td>{{ r.wall if r.wall is not none else "-" }}</td><td>{{ r.finished }}</td>
+<td>{% if r.report %}<a href="{{ r.report }}">report</a>{% endif %}</td></tr>
+{% else %}<tr><td colspan="6">No stages found.</td></tr>{% endfor %}
+</table>
+</body></html>

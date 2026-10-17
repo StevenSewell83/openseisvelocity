@@ -372,3 +372,19 @@ def test_dump_round_trips(tmp_path: Path) -> None:
     out.write_text(dump_config(cfg))
     again = load_config(out)
     assert config_hash(again) == config_hash(cfg)
+
+
+def test_depth_datum() -> None:
+    cfg = resolve_config({}, ".")
+    assert cfg.coordinates.depth_datum == "sea_level"
+    assert cfg.coordinates.reference_elevation_m is None
+    assert "coordinates.depth_datum" in _errors({"coordinates": {"depth_datum": "moon"}})
+    assert "coordinates.reference_elevation_m" in _errors(
+        {"coordinates": {"depth_datum": "reference"}}
+    )
+    assert _errors({"coordinates": {"reference_elevation_m": 600.0}})
+    cfg = resolve_config(
+        {"coordinates": {"depth_datum": "reference", "reference_elevation_m": 600}}, "."
+    )
+    assert cfg.coordinates.reference_elevation_m == 600.0
+    assert resolve_config({"coordinates": {"depth_datum": "surface"}}, ".")

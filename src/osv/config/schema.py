@@ -197,6 +197,33 @@ class CoordinatesConfig(_Base):
         "use_depth_from_stationxml",
         "How to treat borehole sensors: use the sensor depth from StationXML, or ignore it.",
     )
+    depth_datum: Literal["sea_level", "surface", "reference"] = F(
+        "sea_level",
+        "Datum of the catalogue (QuakeML/NLLoc) hypocentre depths. 'sea_level': depth is "
+        "below mean sea level (NLLoc default when the grid origin is at sea level, even if "
+        "the grid top is above it); 'surface': depth is below the local ground surface at "
+        "the epicentre (needs surface elevations from stations or a DEM); 'reference': "
+        "depth is below the fixed elevation reference_elevation_m.",
+    )
+    reference_elevation_m: float | None = F(
+        None,
+        "Elevation (m above sea level, positive up) of the depth datum; required when "
+        "depth_datum is 'reference' (e.g. 600 for an NLLoc grid top at +0.6 km).",
+    )
+
+    @model_validator(mode="after")
+    def _check_datum(self) -> CoordinatesConfig:
+        if self.depth_datum == "reference" and self.reference_elevation_m is None:
+            raise ValueError(
+                "reference_elevation_m: required when depth_datum is 'reference' "
+                "(elevation in metres above sea level of the depth datum)"
+            )
+        if self.depth_datum != "reference" and self.reference_elevation_m is not None:
+            raise ValueError(
+                "reference_elevation_m: only valid with depth_datum 'reference'; "
+                "remove it or set depth_datum to 'reference'"
+            )
+        return self
 
 
 # ---------------------------------------------------------------------------

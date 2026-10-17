@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>osv stage {{ stage }}</title>
+{% include "_style.html" %}
+</head><body>
+<h1>Stage {% if number %}{{ "%02d"|format(number) }} {% endif %}{{ stage }} <span class="badge {{ status }}">{{ status }}</span></h1>
+<p class="meta">
+started {{ manifest.get("started", "-") }} &middot; finished {{ manifest.get("finished") or "-" }}
+&middot; wall time {{ manifest.get("wall_time_s", "-") }} s<br>
+osv {{ manifest.get("osv_version", "-") }} &middot; config hash <code>{{ (manifest.get("config_hash") or "-")[:12] }}</code>
+&middot; run <code>{{ (manifest.get("run_id") or "-")[:8] }}</code>
+</p>
+
+{% if error %}
+<h2>Error</h2>
+<div class="check fail"><strong>{{ error.get("type") }}</strong>: {{ error.get("message") }}</div>
+<details open><summary>Traceback</summary><pre>{{ error.get("traceback") }}</pre></details>
+{% if log_tail %}<details open><summary>Log tail</summary><pre>{{ log_tail }}</pre></details>{% endif %}
+{% endif %}
+
+<h2>QC summary
+{% if counts["fail"] %}<span class="badge fail">{{ counts["fail"] }} fail</span>{% endif %}
+{% if counts["warn"] %}<span class="badge warn">{{ counts["warn"] }} warn</span>{% endif %}
+<span class="badge info">{{ counts["info"] }} info</span></h2>
+{% for c in checks %}
+<div class="check {{ c.severity }}">
+<span class="badge {{ c.severity }}">{{ c.severity }}</span> <code>{{ c.code }}</code>
+{{ c.message }}{% if c.count %} <span class="meta">(n={{ c.count }})</span>{% endif %}
+{% if c.details %}<details><summary>details</summary><pre>{{ c.details | tojson(indent=1) }}</pre></details>{% endif %}
+</div>
+{% else %}<p class="meta">No QC checks recorded.</p>{% endfor %}
+
+{% if summary %}
+<h2>Summary</h2>
+<table>{% for k, v in summary %}<tr><th>{{ k }}</th><td>{{ v }}</td></tr>{% endfor %}</table>
+{% endif %}
+
+{% for section, figs in figure_groups %}
+<h2>{{ section }}</h2>
+{% for f in figs %}
+<figure id="fig-{{ f.name }}">
+{% if f.src %}<a href="{{ f.link }}"><img src="{{ f.src }}" alt="{{ f.name }}" loading="lazy"></a>{% endif %}
+<figcaption><strong>{{ f.name }}</strong>: {{ f.caption }}</figcaption>
+</figure>
+{% endfor %}
+{% endfor %}
+
+<h2>Configuration used</h2>
+<details><summary>config sections</summary><pre>{{ config_json }}</pre></details>
+</body></html>

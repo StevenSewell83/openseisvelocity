@@ -247,3 +247,21 @@ def test_distances_and_azimuths():
     out = c.epicentral_distance_km(np.zeros(3), np.zeros(3), np.zeros(3), [0.0, 1.0, 2.0])
     assert out.shape == (3,)
     assert out[0] == 0.0
+
+
+def test_to_sea_level_depth() -> None:
+    assert c.to_sea_level_depth(2.0) == 2.0
+    assert c.to_sea_level_depth(2.0, "reference", reference_elevation_m=600.0) == pytest.approx(1.4)
+    # reference above surface by 0.6 km: a "depth" of 0 is 0.6 km above sea level
+    assert c.to_sea_level_depth(0.0, "reference", reference_elevation_m=600.0) == pytest.approx(
+        -0.6
+    )
+    out = c.to_sea_level_depth([1.0, 2.0], "surface", surface_elevation_m=[300.0, -100.0])
+    np.testing.assert_allclose(out, [0.7, 2.1])
+    assert np.isnan(c.to_sea_level_depth(1.0, "surface", surface_elevation_m=np.nan))
+    with pytest.raises(ValueError, match="reference_elevation_m"):
+        c.to_sea_level_depth(1.0, "reference")
+    with pytest.raises(ValueError, match="surface_elevation_m"):
+        c.to_sea_level_depth(1.0, "surface")
+    with pytest.raises(ValueError, match="unknown depth datum"):
+        c.to_sea_level_depth(1.0, "moon")  # type: ignore[arg-type]
