@@ -86,7 +86,7 @@ def test_tt_fit_constant_gradient():
     true = (2 / 0.15) * np.arcsinh(0.15 * f.table.distance_km / 8.0)
     ok = ~f.table.index.isin(p_idx)
     clean = f.table[ok]
-    assert np.abs(np.polyval(f.coef, clean.distance_km) - true[ok]).max() < 0.1
+    assert np.abs(f.predict(clean.distance_km.to_numpy()) - true[ok]).max() < 0.1
     assert f.table.loc[p_idx, "outlier"].all()
     assert f.n_outliers <= 5 + 0.03 * f.n
 
@@ -144,3 +144,18 @@ def test_real_data():
     assert 1.5 < res.vpvs < 2.0
     assert res.flags.index.equals(ap.picks.index)
     assert res.counts()["P"]["n"] == 2231
+
+
+def test_tt_curve_does_not_bend_over_at_sparse_far_distances():
+    rng = np.random.default_rng(4)
+    d = np.concatenate([rng.uniform(1, 20, 400), rng.uniform(25, 27, 8)])
+    t = d / 4.6 + rng.normal(0, 0.05, len(d))
+    df = pd.DataFrame({"phase": "P", "hypocentral_km": d, "travel_time_s": t})
+    f = fit_travel_time(df, "P", 3.0)
+    far = f.table[f.table.distance_km > 24]
+    assert not far.outlier.any()
+    assert (np.diff(f.curve_t) >= -1e-9).all()
+    assert f.n_outliers <= 0.03 * f.n
+    # too few picks: nothing assessed
+    small = fit_travel_time(df.iloc[:10], "P", 3.0)
+    assert small.n_outliers == 0 and small.n_not_assessed == 10

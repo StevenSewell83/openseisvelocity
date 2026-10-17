@@ -20,12 +20,14 @@ For every S pick with a P pick at the same event and station (``ts_minus_tp_s`` 
 
 Travel-time analysis
 --------------------
-Per phase, travel time vs hypocentral distance is fitted with a Huber-IRLS polynomial
-(default degree 2).  A low-order polynomial follows the mild concavity of ``t(d)`` in a 1-D
-medium whose velocity increases with depth, while being insensitive to the outliers.  The
-residual scale is the MAD within distance bins (equal-count, at least ``min_bin`` picks per
-bin, floored at half the global MAD), so scatter that grows with distance does not make
-far picks outliers.  Picks with non-positive travel time are flagged with reason ``tt_invalid``.
+Per phase, travel time vs hypocentral distance is described by a binned running median
+(greedy bins of about ``n/max_bins`` (at least ``min_bin``, default 15) picks and at most
+15% of the distance range wide; non-decreasing nodes; linear interpolation,
+linear extrapolation with the end slope).  Unlike a polynomial it cannot
+bend over where data are sparse (a degree-2 Huber fit did, flagging good picks beyond
+25 km).  The residual scale is the MAD of each bin's residuals about the curve (floored at half
+the global MAD).  Picks in bins smaller than ``min_bin`` are not assessed and never flagged.
+Picks with non-positive travel time are flagged with reason ``tt_invalid``.
 
 Combined output
 ---------------
@@ -257,9 +259,14 @@ class TTFit:
     """Result of :func:`fit_travel_time` for one phase.
 
     ``table`` (index = original pick index) has ``distance_km``, ``travel_time_s``,
-    ``residual_s``, ``scale_s`` (local robust sigma), ``z``, ``outlier``, ``invalid``.
-    ``coef`` are polynomial coefficients, highest power first (``numpy.polyval``);
-    ``curve_d``/``curve_t`` are a plotting line.
+    ``residual_s`` (about the binned-median curve), ``scale_s`` (local robust sigma),
+    ``z``, ``outlier``, ``invalid`` and ``assessed`` (False when the pick's bin is too small
+    to judge; such picks are never flagged).  ``node_d``/``node_t``/``node_sigma`` are the
+    bin medians and scales that define the curve; ``curve_d``/``curve_t`` are a smooth
+    (monotone PCHIP) line for plotting.  ``coef`` is only a *plotting convenience*: a
+    degree-``degree`` polynomial least-squares fitted to the curve over the data range
+    (highest power first, ``numpy.polyval``); it is not the model and must not be
+    extrapolated.  ``sigma_s`` is the global robust residual sigma.
     """
 
     phase: str
@@ -270,27 +277,56 @@ class TTFit:
     table: pd.DataFrame
     curve_d: np.ndarray = field(default_factory=lambda: np.empty(0))
     curve_t: np.ndarray = field(default_factory=lambda: np.empty(0))
+    node_d: np.ndarray = field(default_factory=lambda: np.empty(0))
+    node_t: np.ndarray = field(default_factory=lambda: np.empty(0))
+    node_sigma: np.ndarray = field(default_factory=lambda: np.empty(0))
 
     @property
     def n_outliers(self) -> int:
         """Number of flagged picks (including invalid travel times)."""
         return int(self.table["outlier"].sum())
 
+    @property
+    def n_not_assessed(self) -> int:
+        """Valid picks in bins too small to be judged (never flagged)."""
+        return int((~self.table["assessed"] & ~self.table["invalid"]).sum())
 
-def _local_scale(d: np.ndarray, r: np.ndarray, min_bin: int, global_sigma: float) -> np.ndarray:
-    n = len(d)
-    n_bins = max(1, min(8, n // max(min_bin, 1)))
-    scale = np.full(n, global_sigma)
-    if n_bins == 1:
-        return scale
-    edges = np.quantile(d, np.linspace(0, 1, n_bins + 1))
-    which = np.clip(np.searchsorted(edges, d, side="right") - 1, 0, n_bins - 1)
-    floor = 0.5 * global_sigma
-    for b in range(n_bins):
-        m = which == b
-        if m.sum() >= 3:
-            scale[m] = max(robust_sigma(r[m]), floor)
-    return scale
+    def predict(self, d: np.ndarray) -> np.ndarray:
+        """Curve value at distance ``d`` (linear between nodes, linear extrapolation)."""
+        return _interp_extrap(np.asarray(d, float), self.node_d, self.node_t)
+
+
+def _interp_extrap(d: np.ndarray, xn: np.ndarray, yn: np.ndarray) -> np.ndarray:
+    if len(xn) == 1:
+        return d * (yn[0] / xn[0])
+    out = np.interp(d, xn, yn)
+    lo = d < xn[0]
+    hi = d > xn[-1]
+    if lo.any():
+        out[lo] = yn[0] + (d[lo] - xn[0]) * (yn[1] - yn[0]) / (xn[1] - xn[0])
+    if hi.any():
+        out[hi] = yn[-1] + (d[hi] - xn[-1]) * (yn[-1] - yn[-2]) / (xn[-1] - xn[-2])
+    return out
+
+
+def _make_bins(
+    d_sorted: np.ndarray, order: np.ndarray, min_bin: int, max_bins: int, max_width_frac: float
+) -> list[np.ndarray]:
+    """Greedy bins over distance-sorted picks: close at the target count or at the width cap.
+
+    The width cap keeps sparse far-distance picks in their own (small, hence unassessed) bin
+    instead of being averaged into a wide bin whose centre is far from them.
+    """
+    n = len(d_sorted)
+    target = max(min_bin, int(np.ceil(n / max_bins)))
+    wmax = max(max_width_frac * float(d_sorted[-1] - d_sorted[0]), 1e-6)
+    bins: list[np.ndarray] = []
+    start = 0
+    for i in range(1, n + 1):
+        if i == n or i - start >= target or d_sorted[i] - d_sorted[start] > wmax:
+            bins.append(order[start:i])
+            start = i
+    return bins
 
 
 def fit_travel_time(
@@ -298,34 +334,63 @@ def fit_travel_time(
     phase: str,
     sigma: float = 3.0,
     *,
-    degree: int = 2,
-    min_bin: int = 40,
+    degree: int = 3,
+    min_bin: int = 15,
+    max_bins: int = 12,
+    max_width_frac: float = 0.15,
 ) -> TTFit:
-    """Robust polynomial fit of travel time vs hypocentral distance for one phase.
+    """Robust travel time vs hypocentral distance curve for one phase (binned running median).
+
+    Picks sorted by distance are split greedily into bins closing at the target count
+    (``max(min_bin, n / max_bins)``) or at ``max_width_frac`` of the distance range.
+    Each bin gives a node (median distance, median travel time),
+    forced non-decreasing; the curve is linear between nodes and extrapolated linearly with
+    the end-segment slope, so it cannot bend over where the data are sparse.  The scale of each
+    bin is the MAD of its residuals about the curve, floored at half the global MAD.  If fewer
+    than ``min_bin`` valid picks exist, nothing is assessed (no flags except invalid picks).
+    ``degree`` only controls the plotting polynomial ``coef`` (see :class:`TTFit`).
 
     Raises
     ------
     ValueError
-        If there are not enough valid picks (``degree + 2``) for the phase.
+        If there are fewer than 2 valid picks for the phase.
     """
     p = picks[picks["phase"] == phase]
     d = p["hypocentral_km"].to_numpy(float)
     t = p["travel_time_s"].to_numpy(float)
     invalid = ~(np.isfinite(d) & np.isfinite(t) & (t > 0))
-    v = ~invalid
-    if v.sum() < degree + 2:
-        raise ValueError(f"Too few valid {phase} picks ({int(v.sum())}) for a degree-{degree} fit.")
-    deg = degree
-    design = np.vander(d[v], deg + 1)
-    beta = _huber_irls(design, t[v])
+    v = np.flatnonzero(~invalid)
+    if len(v) < 2:
+        raise ValueError(f"Too few valid {phase} picks ({len(v)}) for a travel-time curve.")
+    dv, tv = d[v], t[v]
+    order = np.argsort(dv, kind="stable")
+    chunks = _make_bins(dv[order], order, min_bin, max_bins, max_width_frac)
+    nd = np.array([np.median(dv[c]) for c in chunks])
+    nt = np.maximum.accumulate(np.array([np.median(tv[c]) for c in chunks]))
+    keep = np.concatenate([[True], np.diff(nd) > 1e-9])
+    nd, nt = nd[keep], nt[keep]
+    chunks = [c for c, k in zip(chunks, keep, strict=True) if k]
+    curve_v = _interp_extrap(dv, nd, nt)
+    rv = tv - curve_v
+    gs = robust_sigma(rv)
+    assessed_v = np.zeros(len(v), dtype=bool)
+    scale_v = np.full(len(v), gs)
+    nsig = np.full(len(nd), gs)
+    for i, c in enumerate(chunks):
+        if len(c) >= min_bin:
+            assessed_v[c] = True
+        if len(c) >= 3:
+            nsig[i] = max(robust_sigma(rv[c]), 0.5 * gs)
+            scale_v[c] = nsig[i]
     res = np.full(len(p), np.nan)
-    res[v] = t[v] - design @ beta
-    gs = robust_sigma(res[v])
     scale = np.full(len(p), np.nan)
-    scale[v] = _local_scale(d[v], res[v], min_bin, gs)
     z = np.full(len(p), np.nan)
-    z[v] = (res[v] - np.median(res[v])) / np.where(scale[v] > 0, scale[v], np.nan)
-    flag = invalid | (np.abs(np.nan_to_num(z)) > sigma)
+    assessed = np.zeros(len(p), dtype=bool)
+    res[v] = rv
+    scale[v] = scale_v
+    z[v] = (rv - np.median(rv)) / np.where(scale_v > 0, scale_v, np.nan)
+    assessed[v] = assessed_v
+    flag = invalid | (assessed & (np.abs(np.nan_to_num(z)) > sigma))
     table = pd.DataFrame(
         {
             "distance_km": d,
@@ -335,11 +400,21 @@ def fit_travel_time(
             "z": z,
             "outlier": flag,
             "invalid": invalid,
+            "assessed": assessed | invalid,
         },
         index=p.index,
     )
-    cd = np.linspace(0.0, float(np.nanmax(d[v])), 100)
-    return TTFit(phase, deg, beta, int(v.sum()), gs, table, cd, np.polyval(beta, cd))
+    cd = np.linspace(0.0, float(dv.max()), 200)
+    if len(nd) >= 2:
+        from scipy.interpolate import PchipInterpolator
+
+        ct = PchipInterpolator(nd, nt, extrapolate=False)(cd)
+        ct = np.where(np.isnan(ct), _interp_extrap(cd, nd, nt), ct)
+    else:
+        ct = _interp_extrap(cd, nd, nt)
+    deg = int(min(degree, max(len(nd) - 1, 1)))
+    coef = np.polyfit(cd, ct, deg)
+    return TTFit(phase, deg, coef, len(v), gs, table, cd, ct, nd, nt, nsig)
 
 
 # --------------------------------------------------------------------------- combined
@@ -418,7 +493,8 @@ def analyse_outliers(
     picks: pd.DataFrame | Any,
     sigma: float = 3.0,
     *,
-    tt_degree: int = 2,
+    tt_degree: int = 3,
+    min_bin_picks: int = 15,
     n_boot: int = 500,
     seed: int = 0,
     max_outlier_fraction: float = 0.05,
@@ -435,7 +511,10 @@ def analyse_outliers(
     sigma
         Robust z threshold (``data_selection.wadati_outlier_sigma``), used for both analyses.
     tt_degree
-        Polynomial degree for the travel-time fits.
+        Degree of the plotting polynomial ``TTFit.coef`` (the model is a binned median).
+    min_bin_picks
+        Minimum picks per distance bin for the travel-time curve (default 15); picks in
+        smaller bins are not assessed.
     n_boot, seed
         Wadati bootstrap settings.
     max_outlier_fraction
@@ -463,7 +542,7 @@ def analyse_outliers(
     for ph in ("P", "S"):
         if (df["phase"] == ph).any():
             try:
-                tt[ph] = fit_travel_time(df, ph, sigma, degree=tt_degree)
+                tt[ph] = fit_travel_time(df, ph, sigma, degree=tt_degree, min_bin=min_bin_picks)
             except ValueError as exc:
                 findings.append(QCFinding(f"tt_fit_unavailable_{ph}", "warn", str(exc)))
 
@@ -538,9 +617,10 @@ def analyse_outliers(
                 f"outliers_{ph}",
                 "warn" if frac > max_outlier_fraction else "info",
                 f"{c['any']} of {c['n']} {ph} picks flagged as outliers ({100 * frac:.1f}%): "
-                f"{c['tt']} travel-time, {c['wadati']} Wadati.",
+                f"{c['tt']} travel-time, {c['wadati']} Wadati; "
+                f"{tt[ph].n_not_assessed if ph in tt else 0} not assessed (small distance bins).",
                 c["any"],
-                c,
+                {**c, "not_assessed": tt[ph].n_not_assessed if ph in tt else 0},
             )
         )
     stn = _station_stats(
