@@ -56,6 +56,7 @@ def _fake_read_run_dir(path, **kwargs):
     for blk in (model.p, model.s):
         if blk is not None:
             blk.layers["vel"] = blk.layers["vel"] + delta
+            blk.layers["vdamp"] = 1.0  # like the real parser: velest.OUT has no vdamp
     sta = read_stations(d / "stations.sta")
     base = sta["ptcor"].to_numpy() if ctrl.iusestacorr else np.zeros(len(sta))
     corr = pd.DataFrame({"sta": sta["sta"], "ptcor": base + 0.1, "stcor": base * 2 + 0.2})
@@ -105,7 +106,20 @@ def inputs(tmp_path):
     return SimpleNamespace(cnv_path=cnv, sta_path=sta, control=ctrl)
 
 
+_OLD_LAYERS = [-0.6, 0.2, 0.7, 1.2, 1.7, 2.2, 3.0, 4.0]
+_OLD_BOUNDS = [
+    (1.8, 3.5), (2.5, 4.0), (3.0, 4.5), (3.5, 5.0), (4.0, 5.5), (4.5, 6.0), (5.0, 6.2), (5.5, 6.5),
+]  # fmt: skip
+_OLD_STAGES = [
+    DampingStage(name="stage1_high_damping", vthet=10.0, stathet=1.0),
+    DampingStage(name="stage2_final"),
+]
+
+
 def _cfg(**kw) -> VelestConfig:
+    kw.setdefault("layers_top_km", _OLD_LAYERS)
+    kw.setdefault("vp_bounds", _OLD_BOUNDS)
+    kw.setdefault("stages", _OLD_STAGES)
     return VelestConfig(include_reference_model=False, **kw)
 
 

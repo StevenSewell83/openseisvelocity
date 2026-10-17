@@ -712,9 +712,11 @@ def final_model_checks(res: EnsembleResult, th: QCThresholds | None = None) -> l
                 "divergence_rate",
                 "warn",
                 f"{ndiv} of {n} runs ({rate:.0%}) diverged (> {th.max_divergence_rate:.0%}): "
-                "the final RMS of a run is higher than that of its start; check the delay "
-                "handling (velest.stability.delay_swtfac), the damping and the near-surface "
-                "layer",
+                "the final RMS of a run is higher than that of its start. With nsp = 3 the "
+                "usual cause is a last stage that inverts station delays with S data weighted "
+                "(S readings give no delay partials): estimate delays from P only (stage "
+                "swtfac 0.01) and hold them fixed (invert_station_delays: false) in the last "
+                "stage, as velest.stages does by default",
                 data={"rate": rate, "diverged": ndiv, "n": n},
             )
         )

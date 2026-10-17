@@ -1565,7 +1565,7 @@ def run_stability(
     res = res.merge(
         reference_station_test(
             model, inputs, control, cfg, root_p / "reference_station", seed,
-            n_jobs=n_jobs, timeout=timeout,
+            n_jobs=n_jobs, timeout=timeout, vdamp=vdamp,
         )
     )  # fmt: skip
     if scfg.lvz_test:

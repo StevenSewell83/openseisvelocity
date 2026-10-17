@@ -480,9 +480,14 @@ class DampingStage(_Base):
 
 
 def _default_stages() -> list[DampingStage]:
+    # With nsp = 3 the S delay is ptcor * vpvs but S readings give no delay partials, so a
+    # stage that inverts delays with S data weighted makes the RMS climb (80 of 201 runs
+    # "diverged" on the Rotokawau data). Delays are therefore estimated from P only (stages
+    # 1-2) and held fixed when the S data are added (stage 3).
     return [
-        DampingStage(name="stage1_high_damping", vthet=10.0, stathet=1.0),
-        DampingStage(name="stage2_final"),
+        DampingStage(name="p_high_damping", vthet=10.0, stathet=1.0, swtfac=0.01),
+        DampingStage(name="p_free", swtfac=0.01),
+        DampingStage(name="full_frozen_delays", invert_station_delays=False),
     ]
 
 
@@ -564,27 +569,31 @@ class VelestConfig(_Base):
     """VELEST Monte Carlo 1-D inversion (Stage 2)."""
 
     layers_top_km: list[float] = F(
-        [-0.6, 0.2, 0.7, 1.2, 1.7, 2.2, 3.0, 4.0],
-        "Depth to the top of each layer, km (positive down, may be negative above sea level).",
+        [-0.6, 0.5, 1.0, 1.5, 2.0, 2.5, 3.5],
+        "Depth to the top of each layer, km (positive down, may be negative above sea level). "
+        "The default suits a calibration set with the events at 1-5 km and the stations "
+        "between -0.6 and +0.2 km depth: layers of about 0.5 km down to the events (the rays "
+        "only cross them steeply, so thinner layers are not resolved) and 1 km below. See "
+        "'Choosing layers and damping' in docs/stage2_velest.md.",
         min_length=1,
     )
     vp_bounds: list[Bounds] = F(
         [
-            (1.8, 3.5),
-            (2.5, 4.0),
-            (3.0, 4.5),
-            (3.5, 5.0),
-            (4.0, 5.5),
-            (4.5, 6.0),
-            (5.0, 6.2),
-            (5.5, 6.5),
+            (1.96, 3.62),
+            (2.8, 4.3),
+            (3.3, 4.8),
+            (3.8, 5.3),
+            (4.23, 5.73),
+            (4.72, 6.09),
+            (5.38, 6.42),
         ],  # fmt: skip
-        "[lower, upper] Vp bounds in km/s for each layer (same length as layers_top_km).",
+        "[lower, upper] Vp bounds in km/s for each layer (same length as layers_top_km). They "
+        "only limit the starting models; the inversion may leave them.",
         min_length=1,
     )
     vpvs: VpVsConfig = FF(VpVsConfig, "Vp/Vs treatment.")
     vdamp: float | list[float] | Literal["auto"] = F(
-        1.0,
+        "auto",
         "VELEST per-layer velocity damping factor (the model file's vdamp; effective damping "
         "is damping.vthet * vdamp): a number for all layers, one value per layer, or 'auto' "
         "(heavier damping for layers above the deepest station and below the deepest event, "

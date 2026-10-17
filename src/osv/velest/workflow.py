@@ -472,7 +472,11 @@ def _run_schedule(
             if first and isinstance(e.model, TrialModel):
                 model: Path | TrialModel = e.model
             else:
-                model = _model_path(e.model, inp / f"{e.id}.mod", inputs.control.nmod)
+                # the output model of the previous stage carries no vdamp: re-apply it
+                vm = e.model
+                if isinstance(vm, VelestModel):
+                    vm = _with_vdamp(vm, _vd_list(vdamp, vm))
+                model = _model_path(vm, inp / f"{e.id}.mod", inputs.control.nmod)
             ctrl = _stage_control(inputs.control, st, corr is not None, e.vpvs)
             jobs.append(VelestJob(e.id, model, ctrl, cnv, sta, vdamp=_vd_list(vdamp, e.model)))
         logger.info(
@@ -804,6 +808,8 @@ def iterate_final_model(
         )
         logger.info("iterate cycle %d: rms %.4f dV %.3f dH %.3f", c, _rms(p), dm, dh)
         cur, prev_hypo = p.final_model, hypo
+        if vdamp is not None:  # VELEST's output model has no vdamp column
+            cur = _with_vdamp(cur, vdamp)
         if row.cnv_path:
             cnv = Path(row.cnv_path)
         sc = getattr(p, "station_corrections", None)

@@ -10,7 +10,7 @@ project:
   # Directory under which numbered stage directories are created.
   workdir: runs
   # Parallel worker processes; -1 uses all CPU cores.
-  n_jobs: 24
+  n_jobs: 20
   # Seed for all random number generators (reproducibility).
   random_seed: 42
 
@@ -96,9 +96,16 @@ data_selection:
 # VELEST Monte Carlo 1-D inversion (Stage 2).
 velest:
   # Depth to the top of each layer, km (positive down, may be negative above sea level).
-  layers_top_km: [-0.6, 0.2, 0.7, 1.2, 1.7, 2.2, 3.0, 4.0]
-  # [lower, upper] Vp bounds in km/s for each layer (same length as layers_top_km).
-  vp_bounds: [[1.8, 3.5], [2.5, 4.0], [3.0, 4.5], [3.5, 5.0], [4.0, 5.5], [4.5, 6.0], [5.0, 6.2], [5.5, 6.5]]
+  # The events lie at 1-5 km and the stations at -0.6..+0.2 km depth, so rays cross everything
+  # above ~2 km only steeply: layers thinner than ~0.5 km there are not resolved (Stage 2 docs,
+  # "Choosing layers and damping").
+  layers_top_km: [-0.6, 0.5, 1.0, 1.5, 2.0, 2.5, 3.5]
+  # [lower, upper] Vp bounds in km/s for each layer (same length as layers_top_km); they only
+  # limit the starting models.
+  vp_bounds: [[1.96, 3.62], [2.8, 4.3], [3.3, 4.8], [3.8, 5.3], [4.23, 5.73], [4.72, 6.09], [5.38, 6.42]]
+  # Per-layer velocity damping: a number, a list, or 'auto' (10 for layers above the deepest
+  # station, 3 below the deepest event).
+  vdamp: auto
 
   # Vp/Vs treatment.
   vpvs:
@@ -139,6 +146,13 @@ velest:
     vthet: 1.0
     # Station-correction damping.
     stathet: 0.01
+  # Damping schedule per trial model. With nsp=3 the S delay is ptcor*vpvs but S picks give no
+  # delay partials, so delays are estimated from P only (swtfac 0.01) and then held fixed when
+  # the S picks are added.
+  stages:
+    - {name: p_high_damping, vthet: 10.0, stathet: 1.0, swtfac: 0.01}
+    - {name: p_free, swtfac: 0.01}
+    - {name: full_frozen_delays, invert_station_delays: false}
   # Maximum VELEST iterations per run.
   ittmax: 30
   # VELEST 'invertratio': invert for velocities every N-th iteration.
@@ -155,6 +169,9 @@ velest:
     # Statistic over the selected models giving the final model.
     # Allowed: median | mean | best
     statistic: median
+    # Which model becomes the final model (see docs/stage2_velest.md).
+    # Allowed: median | best | closest | iterated
+    final_model: median
 
   # Stability tests of the final model.
   stability:
@@ -263,18 +280,20 @@ resolution:
   # Checkerboard test settings.
   checkerboard:
     # Cell sizes to test, km.
-    cell_km: [1.5, 2.0, 3.0]
+    cell_km: [2.0, 3.0]
     # Velocity perturbation amplitude, percent.
-    amplitude_pct: 5.0
+    amplitude_pct: 8.0
     # Also run a copy offset by half a cell.
     offset_half_cell: true
   # Spike tests.
-  spikes: []
+  spikes:
+    - {x_km: 0.0, y_km: -7.0, z_km: 2.5, radius_km: 0.75, pct: 8}
+    - {x_km: 0.0, y_km: -2.0, z_km: 2.8, radius_km: 0.75, pct: -8}
   # Example:
   #   - {x_km: 0, y_km: 0, z_km: 2, radius_km: 0.75, pct: -8}
   # Models used as the test background.
   # Allowed: final_3d | user_model | starting
-  input_models: [final_3d, user_model]
+  input_models: [final_3d]
 
   # Noise added to synthetic data.
   noise:

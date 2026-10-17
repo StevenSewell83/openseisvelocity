@@ -406,9 +406,15 @@ def test_depth_datum() -> None:
 
 def test_velest_vdamp_and_final_model_fields() -> None:
     cfg = resolve_config({}, ".")
-    assert cfg.velest.vdamp == 1.0 and cfg.velest.select.final_model in {
-        "median", "best", "closest", "iterated",
-    }  # fmt: skip
+    assert cfg.velest.vdamp == "auto" and cfg.velest.select.final_model == "median"
+    # defaults chosen on real data (docs/stage2_velest.md, "Choosing layers and damping")
+    v = cfg.velest
+    assert len(v.layers_top_km) == len(v.vp_bounds) == 7
+    assert [(s.name, s.swtfac, s.invert_station_delays) for s in v.stages] == [
+        ("p_high_damping", 0.01, None),
+        ("p_free", 0.01, None),
+        ("full_frozen_delays", None, False),
+    ]
     assert resolve_config({"velest": {"vdamp": "auto"}}, ".").velest.vdamp == "auto"
     ok = {"layers_top_km": [0, 1], "vp_bounds": [[1, 2], [3, 4]], "vdamp": [10, 1]}
     assert resolve_config({"velest": ok}, ".").velest.vdamp == [10, 1]

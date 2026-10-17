@@ -13,9 +13,16 @@ from osv.velest.models import (
     write_trial_models,
 )
 
+_OLD_LAYERS = [-0.6, 0.2, 0.7, 1.2, 1.7, 2.2, 3.0, 4.0]
+_OLD_BOUNDS = [
+    (1.8, 3.5), (2.5, 4.0), (3.0, 4.5), (3.5, 5.0), (4.0, 5.5), (4.5, 6.0), (5.0, 6.2), (5.5, 6.5),
+]  # fmt: skip
+
 
 def _cfg(**kw) -> VelestConfig:
     kw.setdefault("n_models", 64)
+    kw.setdefault("layers_top_km", _OLD_LAYERS)  # the tests below assume 8 layers
+    kw.setdefault("vp_bounds", _OLD_BOUNDS)
     return VelestConfig(**kw)
 
 
