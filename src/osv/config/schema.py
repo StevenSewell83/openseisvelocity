@@ -967,6 +967,15 @@ class TradeoffConfig(_Base):
     pick: Literal["max_curvature", "manual"] = F(
         "max_curvature", "How to choose the preferred values from the L-curve."
     )
+    iterations: int = F(
+        3, "Inversion iterations of each trade-off run (fewer than the final inversion).", ge=1
+    )
+    max_concurrent: int | None = F(
+        None,
+        "Trade-off inversions run at the same time (None: n_jobs // 8, at least 1); the fm3d "
+        "jobs are split between them.",
+        ge=1,
+    )
 
 
 class GridlocConfig(_Base):
@@ -1118,6 +1127,18 @@ class NoiseConfig(_Base):
 
     from_pick_uncertainty: bool = F(True, "Scale noise to each pick's uncertainty.")
     scale: float = F(1.0, "Noise scale factor.", ge=0)
+    sigma_s: float = F(
+        0.02, "Constant noise sigma, s, used when from_pick_uncertainty is false.", ge=0
+    )
+
+
+class HypocentreNoiseConfig(_Base):
+    """Location error added to the starting hypocentres of the synthetic inversions."""
+
+    xy: float = F(
+        0.0, "Gaussian sigma of each horizontal coordinate, km (0 = true positions).", ge=0
+    )
+    z: float = F(0.0, "Gaussian sigma of the depth, km (0 = true depths).", ge=0)
 
 
 class ResolutionConfig(_Base):
@@ -1141,6 +1162,9 @@ class ResolutionConfig(_Base):
         example="- {kind: slab, x_km: 0, y_km: 0, z_km: 3, pct: 6, strike_deg: 45, dip_deg: 60}",
     )
     noise: NoiseConfig = FF(NoiseConfig, "Noise added to synthetic data.")
+    hypocentre_noise_km: HypocentreNoiseConfig = FF(
+        HypocentreNoiseConfig, "Perturbation of the starting hypocentres of the test inversions."
+    )
 
 
 class ProfileConfig(_Base):

@@ -614,7 +614,7 @@ def run_inversion(
         row["dir"] = str(d)
         flags.extend(f"iteration {it}: {f}" for f in fl)
         if lp.keep:
-            for name in ("vgrids.in", "sources.in", "stimes.dat"):
+            for name in ("vgrids.in", "sources.in", "stimes.dat", "mtimes.dat"):
                 if (run / name).exists():
                     shutil.copyfile(run / name, d / name)
             if lp.nonlinear and (run / "receivers.in").exists():

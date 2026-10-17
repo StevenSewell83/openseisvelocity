@@ -224,14 +224,18 @@ def test_joint_not_supported(tmp_path):
 def workdir():
     """Scratch directory under the (git-ignored) build/ tree, removed after the test."""
     import shutil
+    import tempfile
 
     WORK.mkdir(parents=True, exist_ok=True)
-    yield WORK
-    shutil.rmtree(WORK, ignore_errors=True)
-    try:
-        WORK.parent.rmdir()  # only if empty
-    except OSError:
-        pass
+    # unique per test so concurrent pytest runs never share (or delete) each other's dirs
+    d = Path(tempfile.mkdtemp(prefix="run-", dir=WORK))
+    yield d
+    shutil.rmtree(d, ignore_errors=True)
+    for p in (WORK, WORK.parent):
+        try:
+            p.rmdir()  # only if empty
+        except OSError:
+            pass
 
 
 def _need(*exes: str) -> None:
