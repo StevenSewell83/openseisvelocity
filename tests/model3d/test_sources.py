@@ -99,7 +99,9 @@ def test_velest_calibration_two_phases():
     p2 = m[(m.event_id == "e2") & (m.phase == "S")]
     np.testing.assert_allclose(p2["time"], 5.25)
     # alignment with receivers.in ray order and unique keys
-    assert (d.observed["receiver"].to_numpy() == d.receivers.rays["receiver"].to_numpy()).all()
+    # otimes rows follow fm3d arrivals.dat order: source-major, then receiver, then ray
+    o = d.observed[["source", "receiver", "ray"]]
+    assert o.equals(o.sort_values(["source", "receiver", "ray"]).reset_index(drop=True))
     assert not m.duplicated(["source_idx", "receiver_idx", "path_idx"]).any()
     assert m["valid"].all()
 
@@ -316,6 +318,10 @@ def test_fm3d_arrivals_map_back(tmp_path):
     run_tool("fm3d", tmp_path, overrides={"fm3d": BIN / "fm3d"}, timeout=1800)
     arr = times.read_arrivals(tmp_path / "arrivals.dat")
     assert len(arr) == d.n_observations and arr["valid"].all()
+    # residuals/invert3d pair otimes.dat with arrivals.dat row by row: same order required
+    obs = times.read_observed(tmp_path / "otimes.dat")
+    key = ["receiver", "source", "ray"]
+    assert (obs[key].to_numpy() == arr[key].to_numpy()).all()
     arr = times.attach_path_ids(arr, d.receivers).rename(columns={"time": "t_fm"})
     mp = pd.read_csv(tmp_path / "otimes_mapping.csv")
     j = arr.merge(

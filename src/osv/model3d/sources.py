@@ -16,9 +16,11 @@ Design (verified against ``3dfm_main.f90`` and ``osv.io.fmtomo``):
   -sensor_elevation_m / 1000`` (negative above sea level; a borehole sensor lies below the
   surface, hence deeper).  Each receiver lists the ``(source, path)`` pairs it recorded; the
   ``ray`` column of ``arrivals.dat`` is the position in that list.
-* **otimes.dat** rows are ordered like ``arrivals.dat``: receivers ascending, each receiver's
-  rays in list order (sorted by source, then path).  The ``ray`` column holds that position (not
-  the path id, see ``osv.io.fmtomo.times``), ``subray`` is 0.
+* **otimes.dat** rows are ordered like fm3d's ``arrivals.dat``: source-major (source, then
+  receiver, then ray), because ``residuals``/``invert3d`` pair ``otimes.dat`` with the model
+  times row by row.  ``receivers.in`` lists each receiver's rays sorted by source, then path;
+  the ``ray`` column holds the position in that list (not the path id, see
+  ``osv.io.fmtomo.times``), ``subray`` is 0.
 * **Observed travel time** = absolute pick time minus the origin time of the *relocated*
   hypocentre (Stage 2 ``final_hypocentres`` carries a ``time`` column, the CNV origin time,
   resolution 0.01 s).  A relocation shifts origin time and position together, so the Stage 1
@@ -350,6 +352,8 @@ def build_fmtomo_data(
         for r in ev.itertuples(index=False)
     ]
 
+    # otimes/mapping rows in fm3d arrivals.dat order: source-major (source, receiver, ray)
+    pk = pk.sort_values(["source_idx", "receiver_idx", "ray_idx"]).reset_index(drop=True)
     observed = pd.DataFrame(
         {
             "receiver": pk["receiver_idx"].to_numpy(),
@@ -419,8 +423,15 @@ def _validate(
     dup = m.duplicated(["source_idx", "receiver_idx", "path_idx"])
     if dup.any():
         raise FmtomoDataError(f"{int(dup.sum())} duplicate (source, receiver, path) rows")
-    if not (rays["receiver"].to_numpy() == obs["receiver"].to_numpy()).all():
-        raise FmtomoDataError("otimes rows are not aligned with receivers.in ray order")
+    expect = rays.assign(ray=rays.groupby("receiver").cumcount() + 1).sort_values(
+        ["source", "receiver", "ray"], kind="stable"
+    )
+    got = obs[["source", "receiver", "ray"]].to_numpy()
+    if not (expect[["source", "receiver", "ray"]].to_numpy() == got).all():
+        raise FmtomoDataError(
+            "otimes rows are not in fm3d arrivals order (source, receiver, ray) "
+            "consistent with receivers.in"
+        )
 
     src = data.events
     if surface is not None:
