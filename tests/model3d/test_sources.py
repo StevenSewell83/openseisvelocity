@@ -338,3 +338,31 @@ def test_fm3d_arrivals_map_back(tmp_path):
         dist = float(np.hypot(epi, s.depth_km - p.depth_km))
         v = vp if r.phase == "P" else vs
         assert r.t_fm == pytest.approx(dist / v, rel=0.02, abs=0.05)
+
+
+def test_station_delays_exclude():
+    pk, ev, st, hyp, dl = _synth()
+    kw = dict(hypocentre_table=hyp, phases=("P", "S"), station_delays=dl)
+    full = build_fmtomo_data(pk, ev, st, Model3DConfig(apply_velest_station_delays=True), **kw)
+    off = build_fmtomo_data(pk, ev, st, Model3DConfig(apply_velest_station_delays=False), **kw)
+    ex = build_fmtomo_data(
+        pk,
+        ev,
+        st,
+        Model3DConfig(apply_velest_station_delays=True, velest_station_delays_exclude=["A"]),
+        **kw,
+    )
+    a = (ex.mapping["station"] == "A").to_numpy()
+    np.testing.assert_allclose(ex.mapping["time"][a], off.mapping["time"][a])
+    np.testing.assert_allclose(ex.mapping["time"][~a], full.mapping["time"][~a])
+    assert any("excluded station" in f for f in ex.findings)
+    # 'borehole' selects stations with sensor_depth_m > 0
+    st2 = st.assign(sensor_depth_m=[0.1 if x == "A" else 0.0 for x in st["alias"]])
+    bh = build_fmtomo_data(
+        pk,
+        ev,
+        st2,
+        Model3DConfig(apply_velest_station_delays=True, velest_station_delays_exclude="borehole"),
+        **kw,
+    )
+    np.testing.assert_allclose(bh.mapping["time"], ex.mapping["time"])

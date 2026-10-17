@@ -932,7 +932,17 @@ class Model3DConfig(_Base):
         "station-scale near-surface signal, which the 3-D grid cannot resolve, is removed using "
         "the minimum 1-D model's delays (on rk-nm-2017 station mean residuals correlate with "
         "VELEST delays at r=0.92). Off: the 3-D model must explain the delays itself, which "
-        "maps them into the shallowest nodes.",
+        "maps them into the shallowest nodes (rk-nm-2017 A/B: without delays the dVp std rises "
+        "from 2.7 to 8.3 % with up to 50 % near-surface anomalies and the validation gain over "
+        "1-D drops; keep on).",
+    )
+    velest_station_delays_exclude: list[str] | Literal["borehole"] = F(
+        [],
+        "Stations whose VELEST delays are NOT subtracted when apply_velest_station_delays is on: "
+        "a list of station codes/aliases, or 'borehole' (all stations with a sensor depth > 0). "
+        "Their delays are relative to the reference station and may double-count the sensor "
+        "depth. 'borehole' on rk-nm-2017 lowered the borehole station residuals a little but "
+        "moved them into +10 % near-surface anomalies; default: none.",
     )
     user_model: UserModelConfig = FF(UserModelConfig, "Inputs for the user-supplied model.")
     uncertainty_from_weight: bool = F(

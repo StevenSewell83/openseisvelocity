@@ -33,11 +33,7 @@ def _placeholders() -> list[list[str]]:
     stages.discover()
     done = {stages.normalise_name(c.name) for c in stages.registered_stages()}
     non_stage = {"init", "doctor", "run", "plot", "config", "version"}
-    return [
-        [c]
-        for c in COMMANDS
-        if c not in non_stage and stages.normalise_name(c) not in done
-    ]
+    return [[c] for c in COMMANDS if c not in non_stage and stages.normalise_name(c) not in done]
 
 
 @pytest.mark.parametrize("args", _placeholders())

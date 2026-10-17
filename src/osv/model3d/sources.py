@@ -141,6 +141,30 @@ def _vtypes(phases: tuple[str, ...], layout: str) -> list[int]:
     return [2 if (ph == "S" and layout == "joint") else 1 for ph in phases]
 
 
+def _excluded_delay_stations(spec, stations: pd.DataFrame) -> set[str]:
+    """Station aliases whose VELEST delays are skipped (``velest_station_delays_exclude``).
+
+    ``'borehole'`` selects stations with ``sensor_depth_m > 0``; a list names station codes or
+    aliases.
+    """
+    if spec is None or (not isinstance(spec, str) and len(spec) == 0):
+        return set()
+    st = stations
+    ali = st["alias"] if "alias" in st else st["sta"]
+    if isinstance(spec, str):
+        if spec != "borehole":
+            raise FmtomoDataError("velest_station_delays_exclude must be a list or 'borehole'")
+        if "sensor_depth_m" not in st:
+            return set()
+        sel = pd.to_numeric(st["sensor_depth_m"], errors="coerce").fillna(0.0) > 0
+        return set(ali[sel.to_numpy()].astype(str))
+    names = {str(x) for x in spec}
+    sel = ali.astype(str).isin(names)
+    if "sta" in st:
+        sel = sel | st["sta"].astype(str).isin(names)
+    return set(ali[sel.to_numpy()].astype(str))
+
+
 def build_fmtomo_data(
     picks: pd.DataFrame,
     events: pd.DataFrame,
@@ -271,7 +295,15 @@ def build_fmtomo_data(
     if apply_delays:
         sd = station_delays.copy()
         key = "alias" if "alias" in sd else "sta"
-        sd = sd.drop_duplicates(key).set_index(key)
+        sd = sd.drop_duplicates(key)
+        excl = _excluded_delay_stations(getattr(m3, "velest_station_delays_exclude", []), stations)
+        if excl:
+            sd = sd[~sd[key].isin(excl)]
+            findings.append(
+                f"VELEST station delays not applied at {len(excl)} excluded station(s): "
+                + ", ".join(sorted(excl))
+            )
+        sd = sd.set_index(key)
         corr = np.zeros(len(pk))
         missing = 0
         for ph, col in (("P", "ptcor"), ("S", "stcor")):

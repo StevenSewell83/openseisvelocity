@@ -467,3 +467,21 @@ def load_chosen_matches(td: Path, top: dict) -> bool:
     from osv.fmtomo.tradeoff import load_chosen
 
     return load_chosen(td) == (top["chosen_damping"], top["chosen_smoothing"])
+
+
+def test_tradeoff_cache_invalidated_by_new_upstream(tmp_path):
+    from osv.config.schema import FmtomoConfig
+    from osv.fmtomo.stage import _invalidate_stale_sweeps
+
+    fm = FmtomoConfig()
+    _invalidate_stale_sweeps(tmp_path, "run1", fm)
+    (tmp_path / "P" / "d1_s1").mkdir(parents=True)
+    (tmp_path / "figures").mkdir()
+    _invalidate_stale_sweeps(tmp_path, "run1", fm)  # same inputs: kept (resume)
+    assert (tmp_path / "P" / "d1_s1").exists()
+    fm2 = FmtomoConfig(iterations=7)
+    _invalidate_stale_sweeps(tmp_path, "run1", fm2)  # other settings: wiped
+    assert not (tmp_path / "P").exists() and (tmp_path / "figures").exists()
+    (tmp_path / "P").mkdir()
+    _invalidate_stale_sweeps(tmp_path, "run2", fm2)  # new build_model run: wiped
+    assert not (tmp_path / "P").exists()

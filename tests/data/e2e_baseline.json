@@ -1,0 +1,26 @@
+{
+  "note": "regenerate with OSV_RUN_E2E=1 OSV_UPDATE_E2E_BASELINE=1 pytest tests/test_e2e_baseline.py",
+  "expected": {
+    "events_selected": 77,
+    "picks_P_selected": 2171,
+    "picks_S_selected": 674,
+    "vpvs": 1.7164,
+    "layer_vp_km_s": [
+      2.067,
+      3.002,
+      3.586,
+      3.175,
+      3.576,
+      4.832,
+      5.016
+    ],
+    "final_rms_ms_P": 111.59,
+    "variance_reduction_pct_P": 52.6,
+    "validation_median_3d_rms_s": 0.019594048675542174
+  },
+  "tolerance": {
+    "layer_vp_km_s": 0.35,
+    "rms_relative": 0.5,
+    "min_variance_reduction_pct": 26.3
+  }
+}

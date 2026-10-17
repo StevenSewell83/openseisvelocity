@@ -79,6 +79,7 @@ A stage is a subclass of `osv.stages.Stage` registered with `@register`. The fra
 ```bash
 .venv/bin/pytest -q                    # unit tests (must pass)
 .venv/bin/pytest -q -m integration     # need built binaries or external data
+OSV_RUN_E2E=1 OSV_TOOLS_DIR=$PWD/build/bin .venv/bin/pytest -q tests/test_e2e_baseline.py  # slow: full pipeline, reduced config, vs tests/data/e2e_baseline.json (OSV_UPDATE_E2E_BASELINE=1 rewrites it)
 .venv/bin/ruff check src tests scripts # lint
 ```
 

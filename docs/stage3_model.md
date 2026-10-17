@@ -20,6 +20,7 @@ Open `report.html` first. A user model (grid, geology, wells; see `user_models.m
   `propgrid_refine`, `source_refine_factor`, `source_refine_cells`.
 - `model3d.surface` (`dem`, `flat`, `station_elevations`), `surface_smoothing_km`, `inputs.dem`.
 - `model3d.apply_velest_station_delays`: subtract the Stage 2 delays from the observed times.
+- `model3d.velest_station_delays_exclude`: stations (list of codes/aliases, or `borehole`) whose delays are not subtracted.
 - `model3d.checks.*`: thresholds for Vp, Vp/Vs and the velocity gradient.
 - `fmtomo.phases`: S data are written when it contains `S` or `vpvs`.
 - `plotting.profiles`, `plotting.depth_slices_km`, `project.n_jobs` (parallel `fm3d` processes).

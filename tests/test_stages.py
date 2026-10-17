@@ -239,3 +239,30 @@ def test_cli_run_plot_and_stage_command(tmp_path: Path) -> None:
     DAnalyse.fail = True  # type: ignore[attr-defined]
     r = runner.invoke(app, ["run", "-c", str(cfg_path)])
     assert r.exit_code == 1 and "failed" in r.output and "boom" in r.output
+
+
+def test_invalidate_cache(tmp_path):
+    import json
+    from types import SimpleNamespace
+
+    from osv.config import OSVConfig
+    from osv.stages import StageContext
+
+    cfg = OSVConfig.model_validate({"project": {"workdir": str(tmp_path)}})
+    st = SimpleNamespace(name="tradeoff", requires=("build_model",))
+    ctx = StageContext(cfg, st, tmp_path)
+    ctx.stage_dir.mkdir(parents=True)
+    up = tmp_path / "04_build_model"
+    up.mkdir()
+
+    def manifest(rid):
+        (up / "manifest.json").write_text(json.dumps({"status": "complete", "run_id": rid}))
+
+    manifest("a")
+    ctx.invalidate_cache("work")
+    (ctx.stage_dir / "work").mkdir()
+    ctx.invalidate_cache("work")
+    assert (ctx.stage_dir / "work").exists()
+    manifest("b")
+    ctx.invalidate_cache("work")
+    assert not (ctx.stage_dir / "work").exists()

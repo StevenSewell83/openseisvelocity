@@ -312,6 +312,27 @@ class StageContext:
         p.parent.mkdir(parents=True, exist_ok=True)
         return p
 
+    def invalidate_cache(self, subdir: str, extra_stages: Iterable[str] = ()) -> None:
+        """Delete ``<stage_dir>/<subdir>`` if it was made from other upstream runs.
+
+        Stages that resume interrupted work from per-run summaries call this first, so that a
+        re-run of an upstream stage (new run id) does not reuse results computed from its old
+        outputs.  ``extra_stages`` adds upstream stages that are read but not in ``requires``.
+        """
+        import shutil
+
+        ids = []
+        for n in (*self.stage.requires, *extra_stages):
+            m = read_manifest(self.project_dir / stage_dirname(normalise_name(n)))
+            ids.append([n, (m or {}).get("run_id")])
+        stamp = hashlib.sha256(json.dumps(ids).encode()).hexdigest()
+        d = self.stage_dir / subdir
+        f = self.stage_dir / f".cache_{subdir}"
+        if d.exists() and not (f.exists() and f.read_text().strip() == stamp):
+            shutil.rmtree(d, ignore_errors=True)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(stamp)
+
     def upstream(self, name: str) -> UpstreamStage:
         """Access a completed upstream stage (``ctx.upstream("prep").path("events.parquet")``)."""
         name = normalise_name(name)

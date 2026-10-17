@@ -276,6 +276,7 @@ class ValidationStage(Stage):
             )
         dws = _invert_dws(ctx, var)
         threshold = float(cfg.plotting.dws_mask_threshold)
+        ctx.invalidate_cache(BOOTSTRAP_DIR, extra_stages=("tradeoff", "invert"))
         wd = ctx.stage_dir / BOOTSTRAP_DIR
         s = ctx.summary
         try:

@@ -587,6 +587,29 @@ def _median_event_depth(stage3: Path) -> float | None:
         return None
 
 
+def _invalidate_stale_sweeps(stage_dir: Path, upstream_run_id: str, fm: Any) -> None:
+    """Delete cached sweep runs made from another Stage 3 run or other inversion settings.
+
+    The per-run ``summary.json`` only records damping, smoothing and iterations, so without this
+    a re-run of ``build_model`` (new data, new 1-D model) would silently reuse old sweeps.
+    Interrupted sweeps of the same inputs still resume.
+    """
+    import hashlib
+
+    settings = fm.model_dump(mode="json", exclude={"tradeoff"})
+    stamp = hashlib.sha256(
+        json.dumps([upstream_run_id, settings], sort_keys=True, default=str).encode()
+    ).hexdigest()
+    f = stage_dir / ".sweep_inputs"
+    if f.exists() and f.read_text().strip() == stamp:
+        return
+    for d in stage_dir.iterdir() if stage_dir.exists() else []:
+        if d.is_dir() and d.name not in ("figures", "logs"):
+            shutil.rmtree(d, ignore_errors=True)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(stamp)
+
+
 @register
 class TradeoffStage(Stage):
     """Stage 4a: damping and smoothing sweeps and L-curve corner picking."""
@@ -605,6 +628,7 @@ class TradeoffStage(Stage):
         chosen: dict[str, dict[str, float]] = {}
         results: dict[str, TradeoffResult] = {}
         tables = []
+        _invalidate_stale_sweeps(ctx.stage_dir, s3.manifest.get("run_id", ""), fm)
         for ph in _phases(cfg, s3.dir):
             data = load_phase_data(s3.dir, ph, fm)
             # rays are not needed in the sweeps; saving them costs time and disk

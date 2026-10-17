@@ -307,6 +307,7 @@ class ResolutionStage(Stage):
         free_nodes = {k: int(v.values.sum()) for k, v in cov.items()}
 
         # ---- the tests, per phase (each phase has its own chosen regularisation)
+        ctx.invalidate_cache(RUNS, extra_stages=("invert",))
         runs_dir = ctx.stage_dir / RUNS
         tables = []
         picked: dict[str, tuple[float, float]] = {}
