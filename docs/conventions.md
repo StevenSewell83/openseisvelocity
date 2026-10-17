@@ -152,3 +152,25 @@ the wrong hemisphere relative to the origin.
 * **Distances**: FMTOMO is a sphere of 6371 km with geographic latitude treated as a
   spherical angle, so its distances differ from WGS84 geodesics by up to ~0.3 percent.
   Use `osv.coords.spherical_distance_km` when comparing to FMTOMO geometry.
+
+### FMTOMO file I/O (`osv.io.fmtomo`, verified against the Fortran readers/writers)
+
+* In memory grids are `xarray.Dataset`s with `lat`/`lon` in degrees and `depth = 6371 - r`
+  (km, **ascending**, i.e. the file's radius axis is flipped); the native header values
+  (`fmtomo_r0_km`, `fmtomo_dlat_rad`, ...) and `n_cushion` (one cushion node per axis side,
+  `grid3dg.f90:200-210`) are kept in `attrs`. Cushion nodes lie one *layer specific* spacing
+  outside the model, so only the interiors of grids of different density coincide.
+* `grid3dg` writes radians with a **single precision** `pi` (`grid3dg.f90:37`, the literal has no
+  `_i10` suffix): origins/spacings are scaled by 1 + 2.78e-8 (<= 4e-6 degree). Readers keep the
+  file values; `Grid3dg.expected_geometry()` reproduces them.
+* `arrivals.dat`/`rays.dat`/`frechet.dat` third column is the **index of the ray in the
+  receiver's own list** (`3dfm_main.f90:1095-1113`), not the path id (README_0.7 is wrong unless
+  each receiver lists every source once); `times.attach_path_ids` maps it to the path.
+* Control files are read with fixed-width `(a26)`/`(a27)`/`(a20)`/... formats (names must fit and
+  the comment must start after that column) or **list-directed** (a `/` in a name ends the value:
+  `scorrect.in`, `frechgen.in`, `mkvpvs.in` need plain names; verified with gfortran). The writers
+  refuse names that would be misread. `tomo3d.in` lines are read by ksh `read` and must stay
+  bare integers. `residuals.dat` is the ksh-collapsed `residuals` output (RMS in ms).
+* `grid3dg.f90:181` skips 29 records before the second (type 2) velocity pass whereas the
+  shipped `grid3dg.in` layout needs 31, so `n_vtypes = 2` does not work with the shipped template
+  without fixing the code (Extras `grid3dgi.f90:183` skips 32).

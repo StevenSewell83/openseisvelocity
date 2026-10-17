@@ -1,0 +1,5 @@
+invert_p/src.dat                c: Source-receiver association file for P
+invert_s/src.dat                c: Source-receiver association file for S
+invert_p/receiversref.in        c: Receiver file for P
+invert_s/receiversref.in        c: Receiver file for S
+src.dat                         c: Source-receiver association file for both P and S
