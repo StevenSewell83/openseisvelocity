@@ -708,7 +708,7 @@ class AnalyseStage(Stage):
             inp = _load_inputs(ctx)
         except StageError:
             raise
-        _, export_masks = _phase_masks(inp, thr)
+        masks, export_masks = _phase_masks(inp, thr)
         findings: list[QCFinding] = []
         summary: dict[str, Any] = {}
         _exports(ctx, inp, export_masks)
@@ -722,6 +722,15 @@ class AnalyseStage(Stage):
         except (OSError, ValueError):
             data = {}
         data["resolvable_mask_applied"] = inp.resolvable is not None
+        for v, m in masks.items():
+            if "resolvable" in m:
+                data[f"resolvable_fraction_{v}"] = round(
+                    volume_fraction(m["covered"] & m["resolvable"]), 4
+                )
+        if inp.resolvable is not None and isinstance(data.get("checks"), list):
+            data["checks"] = [
+                c for c in data["checks"] if c.get("code") != "resolution_not_applied"
+            ]
         sp.write_text(json.dumps(_clean(data), indent=1))
 
 

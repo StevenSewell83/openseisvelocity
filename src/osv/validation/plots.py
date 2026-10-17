@@ -67,7 +67,7 @@ def plot_rms_scatter(res: ValidationResult) -> Any:
         va="top",
         fontsize=8,
     )
-    ax.set_title(f"Held-out events: paired RMS ({_title_stats(res)})")
+    ax.set_title(f"Held-out events: paired RMS\n({_title_stats(res)})", fontsize=10)
     ax.text(0.97, 0.03, "3-D better below the line", transform=ax.transAxes, ha="right", fontsize=7)
     return fig
 

@@ -251,7 +251,10 @@ def test_resolvable_mask_added_by_plot(project) -> None:
     assert "slices_vp_resolvable.png" in figs
     with xr.open_dataset(d / "exports" / "model.nc") as ex:
         assert "resolvable_vp" in ex
-    assert json.loads((d / "summary.json").read_text())["resolvable_mask_applied"] is True
+    summ = json.loads((d / "summary.json").read_text())
+    assert summ["resolvable_mask_applied"] is True
+    assert "resolution_not_applied" not in {c["code"] for c in summ["checks"]}
+    assert any(k.startswith("resolvable_fraction_") for k in summ)
 
 
 def test_incomplete_resolution_is_ignored(project) -> None:
