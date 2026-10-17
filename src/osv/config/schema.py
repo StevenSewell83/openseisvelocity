@@ -778,7 +778,9 @@ class WellsConfig(_Base):
     )
     units: Literal["auto", "us/ft", "us/m"] = F("auto", "Units of the sonic slowness curves.")
     smoothing_m: float = F(50.0, "Vertical smoothing length applied to logs, m.", ge=0)
-    despike_window_m: float = F(2.0, "Median-filter window used to remove spikes, m (0 = off).", ge=0)
+    despike_window_m: float = F(
+        2.0, "Median-filter window used to remove spikes, m (0 = off).", ge=0
+    )
     despike_threshold: float = F(5.0, "Spike threshold in median absolute deviations.", gt=0)
     upscale: Literal["backus", "average", "none"] = F(
         "backus", "Upscaling to the model dz: Backus, slowness average or point sampling."
