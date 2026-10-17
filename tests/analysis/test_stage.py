@@ -291,3 +291,19 @@ def test_context_summary_keys(project) -> None:
     _run(project)
     ctx = StageContext(project, st.AnalyseStage())
     assert stages.read_manifest(ctx.stage_dir)["summary"]["variance_reduction_pct_P"] > 0
+
+
+def test_qc_thresholds_from_config(project) -> None:
+    assert "analysis" in st.AnalyseStage.config_sections
+    thr = st.Thresholds.from_config(project.analysis.qc)
+    assert thr == st.THRESHOLDS
+    inv = Path(project.project.workdir) / stage_dirname("invert")
+    rel = pd.read_parquet(inv / "relocation.parquet")
+    rel["d3_km"] = 3.0
+    rel.to_parquet(inv / "relocation.parquet")
+    assert "many_events_moved" in _codes(_run(project))
+    cfg = project.model_copy(deep=True)
+    cfg.analysis.qc.moved_km = 10.0
+    d = _run(cfg)
+    assert "many_events_moved" not in _codes(d)
+    assert json.loads((d / "summary.json").read_text())["thresholds"]["moved_km"] == 10.0

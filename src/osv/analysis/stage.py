@@ -80,6 +80,17 @@ class Thresholds:
     #: Covered volume fraction below which the coverage is called small.
     min_covered_fraction: float = 0.05
 
+    @classmethod
+    def from_config(cls, cfg: Any) -> Thresholds:
+        """Build from the ``analysis.qc`` config section (:class:`AnalysisQCConfig`)."""
+        return cls(
+            min_variance_reduction_pct=float(cfg.min_variance_reduction_pct),
+            moved_km=float(cfg.moved_km),
+            max_moved_fraction=float(cfg.max_moved_fraction),
+            outside_change_pct=float(cfg.max_change_outside_coverage_pct),
+            min_covered_fraction=float(cfg.min_covered_fraction),
+        )
+
 
 THRESHOLDS = Thresholds()
 
@@ -436,13 +447,20 @@ class AnalyseStage(Stage):
 
     name = "analyse"
     requires = ("invert", "build_model", "prep", "velest_analyse")
-    config_sections = ("plotting", "model3d.source", "model3d.user_model", "fmtomo.relocate")
+    config_sections = (
+        "analysis",
+        "plotting",
+        "model3d.source",
+        "model3d.user_model",
+        "fmtomo.relocate",
+    )
     outputs = ("summary.json", "perturbation_stats.csv")
 
     # ------------------------------------------------------------------ run
     def run(self, ctx: StageContext) -> None:
         cfg = ctx.config
         thr = float(cfg.plotting.dws_mask_threshold)
+        qc = Thresholds.from_config(cfg.analysis.qc)
         inp = _load_inputs(ctx)
         if inp.starting is None:
             ctx.add_check(
@@ -454,7 +472,7 @@ class AnalyseStage(Stage):
             )
         findings: list[QCFinding] = []
         masks, export_masks = _phase_masks(inp, thr)
-        summary: dict[str, Any] = {"dws_mask_threshold": thr, "thresholds": asdict(THRESHOLDS)}
+        summary: dict[str, Any] = {"dws_mask_threshold": thr, "thresholds": asdict(qc)}
 
         # ---- coverage
         if not masks:
@@ -469,7 +487,7 @@ class AnalyseStage(Stage):
         for v, m in masks.items():
             f = volume_fraction(m["covered"])
             summary[f"covered_fraction_{v}"] = round(f, 4)
-            if f < THRESHOLDS.min_covered_fraction:
+            if f < qc.min_covered_fraction:
                 findings.append(
                     QCFinding(
                         "small_coverage",
@@ -496,29 +514,29 @@ class AnalyseStage(Stage):
         # ---- model perturbation
         stats = perturbation_stats(_interior(inp.model), masks)
         stats.to_csv(ctx.stage_dir / "perturbation_stats.csv", index=False)
-        self._perturbation_summary(summary, findings, stats, masks)
+        self._perturbation_summary(summary, findings, stats, masks, qc)
 
         # ---- misfit
-        self._misfit_summary(summary, findings, inp)
+        self._misfit_summary(summary, findings, inp, qc)
 
         # ---- relocation
         if inp.reloc is not None and len(inp.reloc):
             for ph in inp.reloc["phase"].unique() if "phase" in inp.reloc else [None]:
                 sub = inp.reloc if ph is None else inp.reloc[inp.reloc["phase"] == ph]
-                rs = relocation_summary(sub, THRESHOLDS.moved_km)
+                rs = relocation_summary(sub, qc.moved_km)
                 sfx = "" if ph is None else f"_{ph}"
                 summary[f"relocation{sfx}"] = rs
                 for k in ("median_dh_km", "median_abs_dz_km", "moved_fraction"):
                     if k in rs:
                         ctx.summary[f"{k}{sfx}"] = round(rs[k], 3)
                 tag = f" ({ph})" if ph is not None else ""
-                if rs.get("moved_fraction", 0.0) > THRESHOLDS.max_moved_fraction:
+                if rs.get("moved_fraction", 0.0) > qc.max_moved_fraction:
                     findings.append(
                         QCFinding(
                             "many_events_moved",
                             "warn",
                             f"{100 * rs['moved_fraction']:.0f}% of the events{tag}"
-                            f" moved by more than {THRESHOLDS.moved_km:g} km: check the "
+                            f" moved by more than {qc.moved_km:g} km: check the "
                             "hypocentre damping (fmtomo.source_damping_*) and the velocity model",
                             rs["moved_count"],
                         )
@@ -545,6 +563,7 @@ class AnalyseStage(Stage):
         findings: list[QCFinding],
         stats: pd.DataFrame,
         masks: dict[str, dict[str, xr.DataArray]],
+        qc: Thresholds,
     ) -> None:
         out: dict[str, Any] = {}
         for r in stats.itertuples():
@@ -564,11 +583,11 @@ class AnalyseStage(Stage):
         for key, val in out.items():
             if key.endswith("_vs_start"):
                 summary[f"d{key[0].lower()}_std_pct_covered"] = val["std_pct"]
-        AnalyseStage._outside_check(summary, findings, stats)
+        AnalyseStage._outside_check(summary, findings, stats, qc)
 
     @staticmethod
     def _outside_check(
-        summary: dict[str, Any], findings: list[QCFinding], stats: pd.DataFrame
+        summary: dict[str, Any], findings: list[QCFinding], stats: pd.DataFrame, qc: Thresholds
     ) -> None:
         for ph in _PHASE_VAR:
             sel = stats[
@@ -579,7 +598,7 @@ class AnalyseStage(Stage):
             if not len(sel) or not sel.iloc[0]["n"]:
                 continue
             row = sel.iloc[0]
-            lim = THRESHOLDS.outside_change_pct
+            lim = qc.outside_change_pct
             if max(abs(row["p05_pct"]), abs(row["p95_pct"])) > lim:
                 findings.append(
                     QCFinding(
@@ -593,7 +612,9 @@ class AnalyseStage(Stage):
                 )
 
     @staticmethod
-    def _misfit_summary(summary: dict[str, Any], findings: list[QCFinding], inp: _Inputs) -> None:
+    def _misfit_summary(
+        summary: dict[str, Any], findings: list[QCFinding], inp: _Inputs, qc: Thresholds
+    ) -> None:
         its = inp.iterations
         if its is not None and len(its) and "phase" in its:
             for ph, g in its.groupby("phase"):
@@ -615,13 +636,13 @@ class AnalyseStage(Stage):
                             "final model fits worse than the starting one (check regularisation)",
                         )
                     )
-                elif vr < THRESHOLDS.min_variance_reduction_pct:
+                elif vr < qc.min_variance_reduction_pct:
                     findings.append(
                         QCFinding(
                             "poor_variance_reduction",
                             "warn",
                             f"{ph}: variance reduction only {vr:.1f}% (below "
-                            f"{THRESHOLDS.min_variance_reduction_pct:g}%): the data may be fit "
+                            f"{qc.min_variance_reduction_pct:g}%): the data may be fit "
                             "already by the starting model, or regularisation is too strong",
                         )
                     )

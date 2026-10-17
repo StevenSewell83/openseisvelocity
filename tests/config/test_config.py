@@ -45,11 +45,19 @@ def test_template_round_trips(tmp_path: Path) -> None:
     assert cfg.model3d == default.model3d
     assert cfg.fmtomo == default.fmtomo
     assert cfg.plotting == default.plotting
+    assert cfg.analysis == default.analysis
 
 
 def test_template_mentions_every_key_with_comments() -> None:
     text = generate_template()
-    keys = ["vp_bounds", "layers_top_km", "weight_source", "propgrid_refine", "dws_mask_threshold"]
+    keys = [
+        "vp_bounds",
+        "layers_top_km",
+        "weight_source",
+        "propgrid_refine",
+        "dws_mask_threshold",
+        "max_moved_fraction",
+    ]
     for key in keys:
         assert f"{key}:" in text
     assert "# Allowed: fixed | sampled | independent_s_model" in text
@@ -269,6 +277,12 @@ def test_resolution() -> None:
     assert "resolution.input_models[0]" in _errors({"resolution": {"input_models": ["bogus"]}})
 
 
+def test_analysis_qc() -> None:
+    assert OSVConfig().analysis.qc.moved_km == 1.0
+    e = _errors({"analysis": {"qc": {"max_moved_fraction": 2, "moved_km": 0}}})
+    assert {"analysis.qc.max_moved_fraction", "analysis.qc.moved_km"} <= set(e)
+
+
 def test_plotting() -> None:
     assert "plotting.dpi" in _errors({"plotting": {"dpi": 5000}})
     assert "plotting.format[0]" in _errors({"plotting": {"format": ["gif"]}})
@@ -388,3 +402,24 @@ def test_depth_datum() -> None:
     )
     assert cfg.coordinates.reference_elevation_m == 600.0
     assert resolve_config({"coordinates": {"depth_datum": "surface"}}, ".")
+
+
+def test_velest_vdamp_and_final_model_fields() -> None:
+    cfg = resolve_config({}, ".")
+    assert cfg.velest.vdamp == 1.0 and cfg.velest.select.final_model in {
+        "median", "best", "closest", "iterated",
+    }  # fmt: skip
+    assert resolve_config({"velest": {"vdamp": "auto"}}, ".").velest.vdamp == "auto"
+    ok = {"layers_top_km": [0, 1], "vp_bounds": [[1, 2], [3, 4]], "vdamp": [10, 1]}
+    assert resolve_config({"velest": ok}, ".").velest.vdamp == [10, 1]
+    assert "velest.vdamp" in _errors({"velest": {**ok, "vdamp": [1, 2, 3]}})
+    assert "velest.vdamp" in _errors({"velest": {**ok, "vdamp": [1, 1000]}})
+    assert "velest.vdamp" in _errors({"velest": {"vdamp": -1}})
+    assert "velest.vdamp" in _errors({"velest": {"vdamp": "heavy"}})
+    assert "velest.select.final_model" in _errors({"velest": {"select": {"final_model": "mean"}}})
+    st = resolve_config({"velest": {"stages": [{"name": "a", "swtfac": 0.01}]}}, ".")
+    assert st.velest.stages[0].swtfac == 0.01
+    assert "velest.stages[0].swtfac" in _errors(
+        {"velest": {"stages": [{"name": "a", "swtfac": -1}]}}
+    )
+    assert resolve_config({"velest": {"stability": {"delay_swtfac": None}}}, ".")

@@ -26,8 +26,10 @@ ignored.
 - `model3d.source` / `model3d.user_model`: any source other than `velest_1d` adds the comparison with
   the user model. `fmtomo.relocate` tells the residual figures which geometry the run used.
 
-QC thresholds (variance reduction, "moved" distance, ...) are the `Thresholds` dataclass in
-`osv.analysis.stage` (module defaults, not yet config keys).
+- `analysis.qc.*`: QC thresholds, loaded into the `Thresholds` dataclass of `osv.analysis.stage`
+  and recorded in `summary.json`. `min_variance_reduction_pct` (10), `moved_km` (1.0),
+  `max_moved_fraction` (0.25), `max_change_outside_coverage_pct` (10) and `min_covered_fraction`
+  (0.05). Changing any of them marks the stage stale.
 
 ## Inputs read
 
