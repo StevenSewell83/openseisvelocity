@@ -260,11 +260,13 @@ def build_fmtomo_data(
     pk["time"] = _utc(pk["time"])
     tt = (pk["time"] - pk["origin_time"]).dt.total_seconds().to_numpy()
 
+    if apply_delays and station_delays is None:
+        findings.append(
+            "model3d.apply_velest_station_delays is on but no station delays were given; "
+            "observed times are uncorrected"
+        )
+        apply_delays = False
     if apply_delays:
-        if station_delays is None:
-            raise FmtomoDataError(
-                "model3d.apply_velest_station_delays is true but no station_delays table given"
-            )
         sd = station_delays.copy()
         key = "alias" if "alias" in sd else "sta"
         sd = sd.drop_duplicates(key).set_index(key)

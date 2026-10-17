@@ -917,12 +917,13 @@ class Model3DConfig(_Base):
         "'diagnostic': only report station delays; 'near_surface_layer': model them.",
     )
     apply_velest_station_delays: bool = F(
-        False,
+        True,
         "Subtract the Stage 2 VELEST station delays (ptcor/stcor) from the observed travel "
-        "times written for FMTOMO. Off (default): the 3-D model must explain the delays itself "
-        "(they are the signal of near-surface structure, but the 1-D-derived delays also absorb "
-        "hypocentre and model errors); on: the data are made consistent with the 1-D model so "
-        "the residual 3-D signal is smaller, at the risk of removing real structure.",
+        "times written for FMTOMO. FMTOMO cannot invert for station terms, so on (default) the "
+        "station-scale near-surface signal, which the 3-D grid cannot resolve, is removed using "
+        "the minimum 1-D model's delays (on rk-nm-2017 station mean residuals correlate with "
+        "VELEST delays at r=0.92). Off: the 3-D model must explain the delays itself, which "
+        "maps them into the shallowest nodes.",
     )
     user_model: UserModelConfig = FF(UserModelConfig, "Inputs for the user-supplied model.")
     uncertainty_from_weight: bool = F(

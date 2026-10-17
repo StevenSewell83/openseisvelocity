@@ -133,7 +133,8 @@ def test_dropped_event_findings():
 
 def test_station_delays_option():
     pk, ev, st, hyp, dl = _synth()
-    base = build_fmtomo_data(pk, ev, st, Model3DConfig(), hypocentre_table=hyp, phases=("P", "S"))
+    off = Model3DConfig(apply_velest_station_delays=False)
+    base = build_fmtomo_data(pk, ev, st, off, hypocentre_table=hyp, phases=("P", "S"))
     cfg = Model3DConfig(apply_velest_station_delays=True)
     d = build_fmtomo_data(
         pk, ev, st, cfg, hypocentre_table=hyp, phases=("P", "S"), station_delays=dl
@@ -147,8 +148,8 @@ def test_station_delays_option():
     )
     np.testing.assert_allclose(diff, exp)
     assert any("lack a VELEST station delay" in f for f in d.findings)
-    with pytest.raises(FmtomoDataError, match="station_delays"):
-        build_fmtomo_data(pk, ev, st, cfg, hypocentre_table=hyp)
+    nodl = build_fmtomo_data(pk, ev, st, cfg, hypocentre_table=hyp)
+    assert any("no station delays were given" in f for f in nodl.findings)
 
 
 def test_invalid_picks_dropped_or_kept():
@@ -248,7 +249,8 @@ def _real():
 
 def test_real_project_counts_and_consistency():
     pk, ev, st, tabs = _real()
-    d = build_fmtomo_data(pk, ev, st, Model3DConfig(), phases=("P", "S"), **tabs)
+    off = Model3DConfig(apply_velest_station_delays=False)
+    d = build_fmtomo_data(pk, ev, st, off, phases=("P", "S"), **tabs)
     cal = ev[ev["split"] == "calibration"]
     hyp = tabs["hypocentre_table"]
     ids = set(cal["event_id"]) & set(hyp["event_id"])
