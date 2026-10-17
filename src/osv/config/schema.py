@@ -745,15 +745,54 @@ class Horizon(_Base):
     units: Literal["m", "km"] = F("m", "Unit of the surface z values.")
 
 
+class VariogramConfig(_Base):
+    """Variogram for ordinary kriging of well velocities."""
+
+    model: Literal["spherical", "exponential", "gaussian"] = F("spherical", "Variogram model.")
+    range_km: float = F(10.0, "Variogram range (practical range for exponential), km.", gt=0)
+    sill: float = F(1.0, "Sill (kriging weights only depend on nugget/sill ratio).", gt=0)
+    nugget: float = F(0.0, "Nugget (same units as the sill).", ge=0)
+
+
 class WellsConfig(_Base):
     """Well-log (sonic) constraints."""
 
     las_dir: Path | None = F(None, "Directory of LAS well logs; null disables wells.", path=True)
-    curve: str = F("DT", "Log curve mnemonic to convert (sonic slowness).", min_length=1)
-    smoothing_m: float = F(50.0, "Vertical smoothing length applied to logs, m.", ge=0)
-    interp: Literal["kriging", "idw", "linear"] = F(
-        "kriging", "Interpolation of well velocities between wells."
+    table: Path | None = F(
+        None,
+        "Wells table CSV: columns name, las_file, x/y (or lon/lat), elevation_m (elevation of "
+        "the depth datum above sea level) and optional deviation_file (MD, inclination, azimuth). "
+        "Null = take locations from the LAS headers.",
+        path=True,
     )
+    crs: str | None = F(None, "CRS of the table x/y (e.g. 'EPSG:2193'); null = lon/lat.")
+    curve: str = F("DT", "Log curve mnemonic to convert (sonic slowness).", min_length=1)
+    shear_curve: str | None = F("DTS", "Shear sonic slowness curve mnemonic; null = none.")
+    density_curve: str | None = F(
+        "RHOB", "Bulk density curve for Backus averaging; absent = Gardner's relation."
+    )
+    depth_reference: Literal["KB", "GL", "MSL"] = F(
+        "KB",
+        "Datum of the log depths: kelly bushing, ground level (both at 'elevation_m' above sea "
+        "level) or mean sea level.",
+    )
+    units: Literal["auto", "us/ft", "us/m"] = F("auto", "Units of the sonic slowness curves.")
+    smoothing_m: float = F(50.0, "Vertical smoothing length applied to logs, m.", ge=0)
+    despike_window_m: float = F(2.0, "Median-filter window used to remove spikes, m (0 = off).", ge=0)
+    despike_threshold: float = F(5.0, "Spike threshold in median absolute deviations.", gt=0)
+    upscale: Literal["backus", "average", "none"] = F(
+        "backus", "Upscaling to the model dz: Backus, slowness average or point sampling."
+    )
+    vpvs: float = F(1.75, "Vp/Vs used where no shear log exists.", gt=1.0)
+    interp: Literal["kriging", "idw", "nearest", "linear"] = F(
+        "kriging", "Interpolation of well velocities between wells ('linear' is an alias of idw)."
+    )
+    idw_power: float = F(2.0, "Inverse-distance weighting power.", gt=0)
+    variogram: VariogramConfig = FF(VariogramConfig, "Variogram used by kriging.")
+    max_distance_km: float = F(
+        10.0, "Distance from the nearest well beyond which the background is used.", gt=0
+    )
+    taper_km: float = F(2.0, "Width of the taper to the background inside max_distance_km.", ge=0)
 
 
 class UserModelConfig(_Base):
