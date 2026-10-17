@@ -348,6 +348,13 @@ class HypocentrePerturbation(_Base):
 class StabilityConfig(_Base):
     """Stability tests of the final 1-D model (Stage 2, task 3.5)."""
 
+    enabled: bool = F(
+        True,
+        "Run the stability tests (hypocentre perturbation, reference-station swap, LVZ). When "
+        "false only the fixed-model run that gives the final station delays and hypocentres "
+        "is made.",
+    )
+
     fixed_vthet: float = F(
         1.0e5,
         "Velocity damping (vthet) that keeps velocities fixed in the fixed-model runs "
@@ -483,6 +490,30 @@ class IterateUntilConfig(_Base):
         0.02, "Stop when the largest layer velocity change is below this (km/s).", gt=0
     )
     hypo_change_km: float = F(0.1, "Stop when the mean hypocentre shift is below this (km).", gt=0)
+    drift_warn_km_s: float = F(
+        0.2,
+        "Warn when the repeat-until-stable loop moves a layer's Vp from the ensemble final "
+        "model by more than this (km/s).",
+        gt=0,
+    )
+
+
+class VpVsGridConfig(_Base):
+    """Optional Vp/Vs grid search with the final model (consistency check of the Wadati ratio)."""
+
+    enabled: bool = F(False, "Run VELEST once per ratio in 'values' and plot RMS against Vp/Vs.")
+    values: list[float] = F(
+        [1.66, 1.68, 1.70, 1.72, 1.74, 1.76, 1.78, 1.80],
+        "Vp/Vs ratios to test (each > 1).",
+        min_length=3,
+    )
+
+    @field_validator("values")
+    @classmethod
+    def _check_values(cls, v: list[float]) -> list[float]:
+        if any(not x > 1.0 for x in v):
+            raise ValueError("values: every Vp/Vs must be > 1")
+        return v
 
 
 class VelestConfig(_Base):
@@ -542,6 +573,12 @@ class VelestConfig(_Base):
     reseed: ReseedConfig = FF(ReseedConfig, "Reseeded rounds from the best models.")
     iterate_until: IterateUntilConfig = FF(
         IterateUntilConfig, "Repeat VELEST on the final model until changes are negligible."
+    )
+    vpvs_grid: VpVsGridConfig = FF(VpVsGridConfig, "Optional Vp/Vs grid search (final model).")
+    compact_runs: bool = F(
+        True,
+        "Delete scratch files of successful VELEST runs, keeping the control file, model, main "
+        "outputs, logs and status (saves disk for large ensembles).",
     )
 
     @model_validator(mode="after")

@@ -10,7 +10,7 @@ project:
   # Directory under which numbered stage directories are created.
   workdir: runs
   # Parallel worker processes; -1 uses all CPU cores.
-  n_jobs: -1
+  n_jobs: 16
   # Seed for all random number generators (reproducibility).
   random_seed: 42
 
@@ -106,14 +106,14 @@ velest:
     # samples a separate S velocity model.
     # Allowed: fixed | sampled | independent_s_model
     mode: fixed
-    # Vp/Vs ratio for mode 'fixed'.
-    value: 1.75
+    # Vp/Vs ratio for mode 'fixed'; 'wadati' uses the Stage 1 Wadati-diagram ratio.
+    value: wadati
     # [min, max] Vp/Vs for mode 'sampled'.
     range: [1.65, 1.85]
   # Require Vp to be non-decreasing with depth in trial models.
   monotonic: true
   # Number of Monte Carlo trial models.
-  n_models: 1000
+  n_models: 200
   # Sampling scheme for trial velocity models.
   # Allowed: latin_hypercube | sobol | uniform
   sampler: latin_hypercube
@@ -140,7 +140,7 @@ velest:
     # Station-correction damping.
     stathet: 0.01
   # Maximum VELEST iterations per run.
-  ittmax: 9
+  ittmax: 30
   # VELEST 'invertratio': invert for velocities every N-th iteration.
   invertratio: 1
 
@@ -155,6 +155,16 @@ velest:
     # Statistic over the selected models giving the final model.
     # Allowed: median | mean | best
     statistic: median
+
+  # Stability tests of the final model.
+  stability:
+    # Set false to skip them (only the fixed-model run is made).
+    enabled: true
+
+  # Optional Vp/Vs grid search with the final model (consistency check of the Wadati ratio).
+  vpvs_grid:
+    enabled: true
+    values: [1.66, 1.68, 1.70, 1.72, 1.74, 1.76, 1.78, 1.80]
 
 # 3-D starting model (Stage 3).
 model3d:

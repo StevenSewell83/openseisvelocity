@@ -98,7 +98,7 @@ DEFAULT_CONFIG_SECTIONS: dict[str, tuple[str, ...]] = {
 STAGE_MODULES: dict[str, str] = {
     "prep": "osv.data.stage",
     "velest_mc": "osv.velest.stage",
-    "velest_analyse": "osv.velest.analyse_stage",
+    "velest_analyse": "osv.velest.stage",
     "build_model": "osv.model3d.stage",
     "tradeoff": "osv.fmtomo.tradeoff_stage",
     "invert": "osv.fmtomo.stage",

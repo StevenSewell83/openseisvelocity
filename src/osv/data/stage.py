@@ -254,7 +254,16 @@ class PrepStage(Stage):
         ctx.path("tt_fits.json").write_text(json.dumps(tt_json, indent=2))
 
         # ---- VELEST inputs (calibration events; validation events separately)
-        vcal = write_velest_inputs(sel, sta, cfg, ctx.stage_dir / "velest", subset="calibration")
+        cfg_v = cfg
+        if isinstance(cfg.velest.vpvs.value, str):  # 'wadati': resolve from the fit just made
+            if wad is None:
+                raise ValueError(
+                    "velest.vpvs.value is 'wadati' but there are too few S-P pairs for a "
+                    "Wadati fit; set velest.vpvs.value to a number"
+                )
+            cfg_v = cfg.model_copy(deep=True)
+            cfg_v.velest.vpvs.value = round(float(wad.vpvs), 3)
+        vcal = write_velest_inputs(sel, sta, cfg_v, ctx.stage_dir / "velest", subset="calibration")
         ctrl_path = ctx.stage_dir / "velest" / VELEST_CONTROL_JSON
         ctrl_path.write_text(json.dumps(dataclasses.asdict(vcal.control), indent=2))
         findings.extend(vcal.findings)
@@ -268,7 +277,7 @@ class PrepStage(Stage):
             vval = write_velest_inputs(
                 sel,
                 sta,
-                cfg,
+                cfg_v,
                 ctx.stage_dir / "velest_validation",
                 subset="validation",
                 reference_station=vcal.reference_station,
