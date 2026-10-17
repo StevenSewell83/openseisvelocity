@@ -1,0 +1,2 @@
+{"id":"int-bd85a4d674cd1b8a786f9fe17c7c90ba","kind":"field_change","created_at":"2026-10-17T09:05:56.460141Z","actor":"steve","issue_id":"osv-8vx.1","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
+{"id":"int-8545a3c5a3cca8df95cfe64a93d24cf4","kind":"field_change","created_at":"2026-10-17T09:06:54.641552931Z","actor":"steve","issue_id":"osv-8vx.2","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}

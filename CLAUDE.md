@@ -57,21 +57,59 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 - If a required sync or push is blocked, stop and report the exact command and error.
 <!-- END BEADS INTEGRATION -->
 
+# openSeisVelocity — project rules for agents
+
+The full design is in `PLAN.md`. Read the sections relevant to your task before writing code.
+
+## Who does what
+
+- The **orchestrator** (Opus) assigns one bead per subagent, reviews the work, closes the bead, and makes all git commits and pushes.
+- A **subagent**:
+  1. Starts with `bd show <id>` and `bd update <id> --claim`.
+  2. Changes only the files its task needs. Ask (in its final report) rather than editing modules another task owns; small additive edits to shared files (e.g. adding a dependency to `pyproject.toml`, registering a CLI subcommand) are fine.
+  3. Runs the quality gates below until they pass.
+  4. Records a summary with `bd note <id> "..."` (what was built, files, how to test, any limitations or follow-ups).
+  5. **Does not** run `git commit`, `git push`, `bd close` or `bd dolt push`.
+  6. If it finds extra work, files it: `bd create "..." -t task --deps discovered-from:<id> -l agent:sonnet`.
 
 ## Build & Test
 
-_Add your build and test commands here_
+Development environment (until the installer, task 1.6, replaces it):
 
 ```bash
-# Example:
-# npm install
-# npm test
+uv venv .venv --python 3.11          # once
+uv pip install -e ".[dev]"           # after pyproject changes
+.venv/bin/pytest -q                   # unit tests (must pass)
+.venv/bin/pytest -q -m integration    # tests that need built binaries / external data
+.venv/bin/ruff check src tests        # lint (must be clean)
+.venv/bin/ruff format src tests       # format
 ```
 
-## Architecture Overview
+- Fortran compiler for development: system `gfortran` 11 (`/usr/bin/gfortran`). Builds go in `build/` (git-ignored); never commit binaries.
+- Use `--` style non-interactive commands only (`cp -f`, `rm -f`, …).
 
-_Add a brief overview of your project architecture_
+## Architecture
 
-## Conventions & Patterns
+- Python package `openseisvelocity`, import name `osv`, `src/` layout (`src/osv/...`), console script `osv` (typer).
+- Subpackages: `config`, `io` (file formats), `data` (Stage 1), `velest` (Stage 2), `model3d` (Stage 3), `fmtomo` (Stage 4), `analysis` (Stage 5), `resolution` (Stage 6), `validation` (Stage 7), `plotting`, `report`; plus `osv.tools` (running executables), `osv.coords`, `osv.stages` (stage framework).
+- Vendored Fortran: `fortran/velest`, `fortran/fmtomo`, `fortran/fmtomo_extras`. Patches are minimal and each one is listed in `fortran/PATCHES.md`.
+- Every stage runs in its own numbered directory under `project.workdir` and writes `manifest.json`, `figures/` and `report.html`.
 
-_Add your project-specific conventions here_
+## Conventions
+
+- Python 3.11, full type hints, numpy-style docstrings on public functions, `from __future__ import annotations`.
+- Data tables are `pandas.DataFrame`s (stored as Parquet); gridded models are `xarray.Dataset`s with coords `lat`, `lon`, `depth` (km, positive down).
+- **Coordinates:** store true signed latitude/longitude (degrees, east positive) and depth in km positive down; elevation in m positive up. Only `osv.io.*` writers convert to program-specific conventions (e.g. VELEST longitude sign). Never hand-roll conversions elsewhere—use `osv.coords`.
+- **No hard-coded paths or magic numbers**: anything a user might change comes from the config (`osv.config`). Defaults live in the config schema.
+- Each executable run goes in its own directory; never edit shared control files in place.
+- Use `logging` (logger per module), not `print`, except in CLI output.
+- Raise specific exceptions with messages that say what to fix.
+- Figures: use helpers in `osv.plotting` (consistent style, saved via the figure registry with a caption). Every stage provides diagnostic figures and QC checks (see PLAN.md section 5).
+- Tests in `tests/` mirror the package layout (`tests/io/test_velest.py`, …). Small fixtures go in `tests/data/` (keep each < 200 kB). Tests needing compiled binaries or external data are marked `@pytest.mark.integration` and skip cleanly when unavailable.
+
+## Test data
+
+- QuakeML catalogue: `manual_only_catalog.xml` (repo root). Known quirks are listed in PLAN.md section 8 — code must handle them, not the data be edited.
+- StationXML: `/home/steve/seismic/Station_Files/*_STATIONXML.xml` (outside the repo; override with env var `OSV_STATIONXML_DIR`).
+- Legacy VELEST examples: `/home/steve/seismic/velest/MonteCarlo`, `/home/steve/seismic/velest/MC`.
+- FMTOMO examples and manuals: `fortran/fmtomo/example1`, `/home/steve/seismic/FMTOMO/docs/*.pdf`.

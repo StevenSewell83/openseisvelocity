@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "openseisvelocity"
+version = "0.1.0"
+description = "Seismic velocity inversion workflow wrapping VELEST and FMTOMO"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "obspy",
+    "numpy",
+    "scipy",
+    "pandas",
+    "pyarrow",
+    "xarray",
+    "netcdf4",
+    "matplotlib",
+    "pyproj",
+    "pydantic>=2",
+    "pyyaml",
+    "typer",
+    "joblib",
+    "jinja2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov", "ruff"]
+geo = ["lasio", "rasterio", "pyvista", "cartopy"]
+gmt = ["pygmt"]
+
+[project.scripts]
+osv = "osv.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/osv"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: needs built binaries or external data; skipped when unavailable",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "W"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["typer.Option", "typer.Argument"]
