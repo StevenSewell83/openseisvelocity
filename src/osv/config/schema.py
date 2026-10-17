@@ -703,14 +703,29 @@ class ConstantLaw(_Base):
 
 
 class GradientLaw(_Base):
-    """Linear velocity gradient within a unit: v = v0 + k * (depth below unit top)."""
+    """Linear velocity gradient within a unit: v = v0 + k * (depth below the reference)."""
 
     law: Literal["gradient"]
-    v0: float = F(..., "Velocity at the top of the unit, km/s.", gt=0)
+    v0: float = F(..., "Velocity at the reference depth, km/s.", gt=0)
     k: float = F(..., "Gradient, km/s per km of depth.")
+    reference: Literal["unit_top", "surface", "sea_level"] = F(
+        "unit_top", "Depth origin of the law: top of the unit, ground surface or sea level."
+    )
 
 
-VelocityLaw = Annotated[ConstantLaw | GradientLaw, Field(discriminator="law")]
+class ExponentialLaw(_Base):
+    """Compaction law: v = vmax - (vmax - v0) * exp(-h / lambda_km)."""
+
+    law: Literal["exponential"]
+    v0: float = F(..., "Velocity at the reference depth, km/s.", gt=0)
+    vmax: float = F(..., "Asymptotic velocity at great depth, km/s.", gt=0)
+    lambda_km: float = F(..., "E-folding depth, km.", gt=0)
+    reference: Literal["unit_top", "surface", "sea_level"] = F(
+        "unit_top", "Depth origin of the law: top of the unit, ground surface or sea level."
+    )
+
+
+VelocityLaw = Annotated[ConstantLaw | GradientLaw | ExponentialLaw, Field(discriminator="law")]
 
 
 class Horizon(_Base):
@@ -720,6 +735,14 @@ class Horizon(_Base):
     surface: Path = F(..., "Base surface file (XYZ, GeoTIFF or GOCAD TSurf).", path=True)
     vp: VelocityLaw = F(..., "P-velocity law within the unit.")
     vs: VelocityLaw | None = F(None, "Optional S-velocity law; default uses the Vp/Vs ratio.")
+    vpvs: float = F(1.75, "Vp/Vs ratio used when no S-velocity law is given.", gt=1.0)
+    crs: str | None = F(
+        None, "CRS of the surface file (e.g. 'EPSG:2193'); null = file's own CRS or lon/lat."
+    )
+    z_convention: Literal["depth", "elevation"] = F(
+        "depth", "Surface z values are depth (positive down) or elevation (positive up)."
+    )
+    units: Literal["m", "km"] = F("m", "Unit of the surface z values.")
 
 
 class WellsConfig(_Base):
@@ -739,6 +762,16 @@ class UserModelConfig(_Base):
     grid_file: Path | None = F(
         None, "NetCDF/CSV velocity grid with x,y,z,vp[,vs] columns.", path=True
     )
+    grid_crs: str | None = F(
+        None, "CRS of the grid_file x/y (e.g. 'EPSG:2193'); null = lon/lat or the file's attribute."
+    )
+    z_convention: Literal["depth", "elevation"] = F(
+        "depth", "grid_file z is depth (positive down) or elevation (positive up)."
+    )
+    units: Literal["m", "km"] = F("km", "Unit of the grid_file z coordinate.")
+    grid_columns: dict[str, str] = F(
+        {}, "Column/variable names in grid_file, keys x, y, z, vp, vs (defaults: the same names)."
+    )
     horizons: list[Horizon] = F(
         [],
         "Geological units, ordered top to bottom.",
@@ -755,6 +788,35 @@ class UserModelConfig(_Base):
         1.0, "Width of the taper blending user model into background, km.", ge=0
     )
     smoothing_km: float = F(0.5, "Smoothing length applied to the combined model, km.", ge=0)
+
+
+class ExtrusionUncertaintyConfig(_Base):
+    """A priori model uncertainty (second column of ``vgrids.in``, std in km/s)."""
+
+    mode: Literal["constant", "spread"] = F(
+        "constant",
+        "'constant': the same value everywhere; 'spread': half the p05-p95 spread of each "
+        "1-D layer (needs *_p05/*_p95 columns), bounded by min/max_km_s.",
+    )
+    value_km_s: float = F(0.3, "Uncertainty for mode 'constant', km/s.", gt=0)
+    min_km_s: float = F(0.1, "Lower bound for mode 'spread', km/s.", gt=0)
+    max_km_s: float = F(1.0, "Upper bound for mode 'spread', km/s.", gt=0)
+
+
+class ExtrusionConfig(_Base):
+    """Extension of the 1-D VELEST model to 3-D (``model3d.source = velest_1d``)."""
+
+    mode: Literal["gradient", "layered"] = F(
+        "gradient",
+        "'layered': constant-velocity steps at the layer tops; 'gradient': linear "
+        "interpolation between layer mid-depths.",
+    )
+    smoothing_km: float = F(
+        0.0, "Gaussian smoothing length (sigma) along depth for mode 'layered', km.", ge=0
+    )
+    uncertainty: ExtrusionUncertaintyConfig = FF(
+        ExtrusionUncertaintyConfig, "A priori uncertainty written to the vgrids."
+    )
 
 
 class Model3DConfig(_Base):
@@ -776,9 +838,27 @@ class Model3DConfig(_Base):
     surface: Literal["dem", "flat", "station_elevations"] = F(
         "station_elevations", "Source of the top (surface) interface."
     )
+    surface_elevation_m: float = F(
+        0.0, "Elevation of the flat surface (surface = 'flat'), m above sea level."
+    )
+    surface_smoothing_km: float = F(
+        1.0,
+        "Gaussian smoothing length of the station-elevation surface (and of the DEM after "
+        "resampling), km.",
+        ge=0,
+    )
+    extrusion: ExtrusionConfig = FF(ExtrusionConfig, "1-D to 3-D extension of the velocity model.")
     station_delays: Literal["diagnostic", "near_surface_layer"] = F(
         "diagnostic",
         "'diagnostic': only report station delays; 'near_surface_layer': model them.",
+    )
+    apply_velest_station_delays: bool = F(
+        False,
+        "Subtract the Stage 2 VELEST station delays (ptcor/stcor) from the observed travel "
+        "times written for FMTOMO. Off (default): the 3-D model must explain the delays itself "
+        "(they are the signal of near-surface structure, but the 1-D-derived delays also absorb "
+        "hypocentre and model errors); on: the data are made consistent with the 1-D model so "
+        "the residual 3-D signal is smaller, at the risk of removing real structure.",
     )
     user_model: UserModelConfig = FF(UserModelConfig, "Inputs for the user-supplied model.")
 
