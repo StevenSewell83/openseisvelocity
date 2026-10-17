@@ -1021,6 +1021,15 @@ class JointVpVsConfig(_Base):
     )
     vpvs_max_depth_km: float = F(50.0, "mkvpvs: maximum depth of the Vp/Vs model, km.", gt=0)
     sparse_fraction: float = F(0.1, "vpvsinv: fraction of max G size for the sparse matrix.", gt=0)
+    relocation: Literal["joint", "p_fixed_for_s", "independent"] | None = F(
+        None,
+        "How P and S share the hypocentres when both phases are inverted: 'joint' (coupled "
+        "gridlocj relocation, Extras tomo3dj), 'p_fixed_for_s' (relocate with P, keep those "
+        "hypocentres fixed in the S run) or 'independent' (separate runs). None: 'joint' for "
+        "phases [vpvs], 'independent' for [P, S]. All modes but 'independent' (and [vpvs]) need "
+        "relocate: nonlinear.",
+        example="joint",
+    )
 
 
 class FmtomoConfig(_Base):
@@ -1031,7 +1040,8 @@ class FmtomoConfig(_Base):
     )
     phases: list[Literal["P", "S", "vpvs"]] = F(
         ["P"],
-        "Phases to invert: [P], [P, S] (separate), or [vpvs] (joint Vp/Vs).",
+        "Phases to invert: [P], [P, S] (coupling set by joint.relocation), or [vpvs] (P and S "
+        "inversions followed by the Vp/Vs inversion; needs relocate: nonlinear).",
         min_length=1,
     )
     relocate: Literal["none", "linear", "nonlinear"] = F(
@@ -1093,6 +1103,21 @@ class FmtomoConfig(_Base):
             raise ValueError(
                 "package: 'base' FMTOMO has no nonlinear relocation or Vp/Vs inversion "
                 "(use package: extras, or relocate: linear/none and phases P/S)"
+            )
+        mode = self.joint.relocation
+        if (
+            set(ph) == {"P", "S"}
+            and mode in ("joint", "p_fixed_for_s")
+            and self.relocate != "nonlinear"
+        ):
+            raise ValueError(
+                f"joint.relocation '{mode}' needs relocate: nonlinear (the P/S association of "
+                "the Extras programs uses the stations-as-sources geometry)"
+            )
+        if mode is not None and "vpvs" in ph and mode == "independent":
+            raise ValueError(
+                "phases [vpvs]: joint.relocation 'independent' leaves P and S with different "
+                "hypocentres; use 'joint' or 'p_fixed_for_s'"
             )
         return self
 

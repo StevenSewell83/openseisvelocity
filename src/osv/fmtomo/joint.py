@@ -380,8 +380,11 @@ def _read_receiver_lines(path: Path) -> tuple[list[str], list[str]]:
 
 
 def _read_otimes_lines(path: Path) -> tuple[str, list[list[str]]]:
+    # token based: a row may wrap over two lines when the writer prints 17 digits of the time
     lines = path.read_text().splitlines()
-    return lines[0], [ln.split() for ln in lines[1 : 1 + int(lines[0].split()[0])]]
+    n = int(lines[0].split()[0])
+    toks = " ".join(lines[1:]).split()
+    return lines[0], [toks[6 * i : 6 * i + 6] for i in range(n)]
 
 
 def transfer_hypocentres(
