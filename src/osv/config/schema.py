@@ -1074,6 +1074,12 @@ class CheckerboardConfig(_Base):
     cell_km: PositiveList = F([1.5, 2.0, 3.0], "Cell sizes to test, km.")
     amplitude_pct: float = F(5.0, "Velocity perturbation amplitude, percent.", gt=0, lt=100)
     offset_half_cell: bool = F(True, "Also run a copy offset by half a cell.")
+    shape: Literal["sin", "block"] = F(
+        "sin", "Pattern shape: smooth sinusoid (recommended for B-spline grids) or sign blocks."
+    )
+    depth_cells: bool = F(
+        True, "Alternate in depth as well (3-D); false = laterally varying only, constant in depth."
+    )
 
 
 class SpikeConfig(_Base):
@@ -1084,6 +1090,27 @@ class SpikeConfig(_Base):
     z_km: float = F(..., "Depth, km.")
     radius_km: float = F(..., "Spike radius, km.", gt=0)
     pct: float = F(..., "Velocity perturbation, percent.")
+    shape: Literal["gaussian", "sphere"] = F(
+        "gaussian", "Gaussian (sigma = radius/2) or uniform sphere."
+    )
+
+
+class AnomalyBodyConfig(_Base):
+    """Custom anomaly body for input-model tests (local km coordinates, depth positive down)."""
+
+    kind: Literal["block", "cylinder", "slab"] = F(..., "Body type.")
+    x_km: float = F(..., "East offset of the body centre from the origin, km.")
+    y_km: float = F(..., "North offset of the body centre, km.")
+    z_km: float = F(..., "Depth of the body centre, km.")
+    pct: float = F(..., "Velocity perturbation, percent.")
+    length_km: float = F(2.0, "Extent along strike, km (block, slab, cylinder axis).", gt=0)
+    width_km: float = F(2.0, "Extent across strike (block) or down dip (slab), km.", gt=0)
+    height_km: float = F(2.0, "Vertical extent (block), km.", gt=0)
+    thickness_km: float = F(0.5, "Slab thickness normal to the plane, km.", gt=0)
+    radius_km: float = F(1.0, "Cylinder radius, km.", gt=0)
+    strike_deg: float = F(0.0, "Strike, degrees clockwise from north.")
+    dip_deg: float = F(90.0, "Dip below horizontal, degrees (right-hand rule).", ge=0, le=90)
+    edge_km: float = F(0.0, "Width of the smooth (cosine) edge taper, km (0 = hard edge).", ge=0)
 
 
 class NoiseConfig(_Base):
@@ -1102,8 +1129,16 @@ class ResolutionConfig(_Base):
         "Spike tests.",
         example="- {x_km: 0, y_km: 0, z_km: 2, radius_km: 0.75, pct: -8}",
     )
-    input_models: list[Literal["final_3d", "user_model", "starting"]] = F(
+    input_models: list[Literal["final_3d", "user_model", "starting", "file", "anomaly"]] = F(
         ["final_3d", "user_model"], "Models used as the test background."
+    )
+    input_model_file: Path | None = F(
+        None, "NetCDF/CSV velocity grid for the 'file' input model.", path=True
+    )
+    anomalies: list[AnomalyBodyConfig] = F(
+        [],
+        "Custom anomaly bodies for the 'anomaly' input model.",
+        example="- {kind: slab, x_km: 0, y_km: 0, z_km: 3, pct: 6, strike_deg: 45, dip_deg: 60}",
     )
     noise: NoiseConfig = FF(NoiseConfig, "Noise added to synthetic data.")
 
