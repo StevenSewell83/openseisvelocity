@@ -1274,6 +1274,15 @@ class BootstrapConfig(_Base):
         90.0, "Width (percent) of the central interval reported for every node.", gt=0, lt=100
     )
     min_free_disk_gb: float = F(1.0, "Do not start an inversion with less free disk (GB).", ge=0)
+    min_ok_fraction: float = F(
+        0.8, "Warn when fewer than this fraction of the resampled inversions succeeded.", ge=0, le=1
+    )
+    std_warn_pct: float = F(
+        3.0,
+        "Warn when the median velocity-perturbation std inside the DWS coverage exceeds this "
+        "(percent).",
+        gt=0,
+    )
 
 
 class ValidationConfig(_Base):

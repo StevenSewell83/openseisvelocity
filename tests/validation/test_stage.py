@@ -152,3 +152,138 @@ def test_options_from_config(tmp_path):
     assert opt.n_iterations == 3
     assert opt.phases == ("P", "S")
     assert vstage._options(resolve_config({}, tmp_path)).phases == ("P",)
+
+
+# ------------------------------------------------------------------ bootstrap wiring
+def _fake_bootstrap(tmp_path: Path, n_ok: int, n_samples: int, std: float):
+    import xarray as xr
+
+    from osv.validation.bootstrap import BootstrapResult
+
+    shape = (4, 4, 4)
+    dws = np.zeros(shape)
+    dws[1:3, 1:3, 1:3] = 100.0
+    dims = ("depth", "lat", "lon")
+    sd = np.full(shape, 9.0)  # large outside the coverage
+    sd[1:3, 1:3, 1:3] = std
+    ds = xr.Dataset(
+        {
+            "vp_std": (dims, sd / 10),
+            "dvp_std_pct": (dims, sd),
+            "dws": (dims, dws),
+        },
+        attrs={"n_cushion": 0},
+    )
+    table = pd.DataFrame(
+        {
+            "name": [f"s{i}" for i in range(n_samples)],
+            "success": [i < n_ok for i in range(n_samples)],
+        }
+    )
+    return BootstrapResult(
+        tmp_path, table, ds, tmp_path / "bootstrap_std.nc", pd.DataFrame(), pd.DataFrame(),
+        "bootstrap", 1.0, 2.0, 3, 8, 1, 1,
+    )  # fmt: skip
+
+
+def _run_bootstrap(tmp_path, monkeypatch, *, n_ok=10, n_samples=10, std=1.0, tradeoff=True):
+    seen: dict = {}
+
+    def fake_run(inputs, cfg, chosen, workdir, n_jobs=1, **kw):
+        seen.update(inputs=inputs, chosen=chosen, workdir=Path(workdir), n_jobs=n_jobs, **kw)
+        return _fake_bootstrap(tmp_path, n_ok, n_samples, std)
+
+    figs: dict = {}
+
+    def fake_figs(res, figures, section="Bootstrap", dws_threshold=None):
+        figs.update(section=section, thr=dws_threshold)
+        return []
+
+    monkeypatch.setattr(vstage, "run_bootstrap", fake_run)
+    monkeypatch.setattr(vstage, "make_bootstrap_figures", fake_figs)
+    monkeypatch.setattr(
+        vstage.BootstrapInputs, "from_stage3", classmethod(lambda cls, d, phase="P": (d, phase))
+    )
+    prj = _project(tmp_path, invert=True)
+    if tradeoff:
+        t = _complete(prj, "tradeoff")
+        (t / "tradeoff.json").write_text(json.dumps({"chosen_damping": 3, "chosen_smoothing": 4}))
+    xr = pytest.importorskip("xarray")
+    dws = xr.DataArray(np.ones((4, 4, 4)), dims=("depth", "lat", "lon"))
+    xr.Dataset({"dws": dws}).to_netcdf(prj / stages.stage_dirname("invert") / "final_model.nc")
+    monkeypatch.setattr(vstage, "relocate_validation", lambda *a, **k: _fake_result())
+    monkeypatch.setattr(vstage, "grid_from_outputs", lambda d: object())
+    cfg = resolve_config(
+        {
+            "project": {"workdir": str(prj), "n_jobs": 3},
+            "plotting": {"format": ["png"], "dpi": 50},
+            "validation": {"bootstrap": {"enabled": True}},
+        },
+        tmp_path,
+    )
+    stages.run_pipeline(cfg, only="validation")
+    man = json.loads((prj / "09_validation" / "manifest.json").read_text())
+    return man, seen, figs
+
+
+def test_bootstrap_not_run_by_default(tmp_path, monkeypatch):
+    called: list = []
+    monkeypatch.setattr(vstage, "run_bootstrap", lambda *a, **k: called.append(1))
+    _run(tmp_path, monkeypatch, invert=True)
+    assert not called
+
+
+def test_bootstrap_wired(tmp_path, monkeypatch):
+    man, seen, figs = _run_bootstrap(tmp_path, monkeypatch)
+    assert seen["workdir"].name == "bootstrap"
+    assert seen["chosen"].name == "tradeoff.json"
+    assert seen["dws"] is not None
+    assert seen["inputs"][1] == "P"
+    assert figs["section"] == "Bootstrap" and figs["thr"] is not None
+    s = man["summary"]
+    assert s["bootstrap_samples_ok"] == 10
+    assert s["bootstrap_median_std_pct"] == pytest.approx(1.0)  # covered nodes only
+    assert s["bootstrap_max_std_pct"] == pytest.approx(1.0)
+    codes = {c["code"] for c in man["checks"]}
+    assert not codes & {"bootstrap_few_samples", "bootstrap_high_std"}
+    assert "bootstrap_default_regularisation" not in codes
+
+
+def test_bootstrap_checks(tmp_path, monkeypatch):
+    man, seen, _ = _run_bootstrap(
+        tmp_path, monkeypatch, n_ok=5, n_samples=10, std=5.0, tradeoff=False
+    )
+    codes = {c["code"] for c in man["checks"]}
+    assert {
+        "bootstrap_few_samples",
+        "bootstrap_high_std",
+        "bootstrap_default_regularisation",
+    } <= codes
+    assert seen["chosen"] is None
+
+
+def test_bootstrap_failure_is_a_warning(tmp_path, monkeypatch):
+    from osv.validation.bootstrap import BootstrapError
+
+    def boom(*a, **k):
+        raise BootstrapError("only 1 of 5 samples succeeded")
+
+    prj = _project(tmp_path, invert=True)
+    monkeypatch.setattr(vstage, "run_bootstrap", boom)
+    monkeypatch.setattr(
+        vstage.BootstrapInputs, "from_stage3", classmethod(lambda cls, d, phase="P": None)
+    )
+    monkeypatch.setattr(vstage, "relocate_validation", lambda *a, **k: _fake_result())
+    monkeypatch.setattr(vstage, "grid_from_outputs", lambda d: object())
+    cfg = resolve_config(
+        {
+            "project": {"workdir": str(prj)},
+            "plotting": {"format": ["png"], "dpi": 50},
+            "validation": {"bootstrap": {"enabled": True}},
+        },
+        tmp_path,
+    )
+    stages.run_pipeline(cfg, only="validation")
+    man = json.loads((prj / "09_validation" / "manifest.json").read_text())
+    assert man["status"] == "complete"
+    assert "bootstrap_failed" in {c["code"] for c in man["checks"]}

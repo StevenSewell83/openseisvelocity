@@ -87,6 +87,9 @@ HEADLINES: dict[str, tuple[str, ...]] = {
         "fraction_3d_better",
         "fraction_3d_worse",
         "wilcoxon_p",
+        "bootstrap_median_std_pct",
+        "bootstrap_max_std_pct",
+        "bootstrap_samples_ok",
     ),
 }
 
@@ -100,7 +103,7 @@ KEY_FIGURES: dict[str, tuple[str, ...]] = {
     "invert": ("convergence*", "misfit*", "rms*"),
     "analyse": ("dvp_slices*", "dvp_section*", "variance*"),
     "resolution": ("checkerboard*", "resolvable*", "coverage*"),
-    "validation": ("rms_1d_vs_3d*", "*rms*", "*improvement*"),
+    "validation": ("rms_1d_vs_3d*", "*rms*", "*improvement*", "bootstrap_std_slices*"),
 }
 MAX_KEY_FIGURES = 2
 

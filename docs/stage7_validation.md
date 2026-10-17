@@ -19,6 +19,32 @@ Needs `prep`, `velest_analyse` and `build_model`; `invert` is used when it has c
 `interfaces.in` and `propgrid.in` always come from `04_build_model/fmtomo/`. The stage is marked
 stale when `final_vgrids.in` changes. Needs the VELEST and FMTOMO binaries (`osv doctor`).
 
+## Bootstrap / jackknife (optional)
+
+With `validation.bootstrap.enabled: true` (default false; slow, one inversion per sample) the stage
+also runs `osv.validation.bootstrap.run_bootstrap`: event-resampled inversions from the Stage 3
+FMTOMO inputs (`04_build_model/fmtomo/`), phase P (S if only S is inverted). The damping and smoothing
+are those chosen by the `tradeoff` stage (`05_tradeoff/tradeoff.json`); when it has not completed
+the stage still runs with `fmtomo.damping`/`fmtomo.smoothing` and records an info check
+(`bootstrap_default_regularisation`). `tradeoff` is therefore not a hard requirement; when it has
+completed its `tradeoff.json` is an input (changing it makes the stage stale). The DWS of
+`06_invert/final_model.nc` (if `invert` has completed) is stored in `bootstrap_std.nc` and masks
+the figures and the summary with `plotting.dws_mask_threshold`.
+
+Outputs in `09_validation/bootstrap/`: `bootstrap_std.nc`, `bootstrap_samples.csv`,
+`bootstrap_hypocentres.csv`, `bootstrap.json` and one directory per sample. Figures (report section
+"Bootstrap"): `bootstrap_std_slices`, `bootstrap_std_sections`, `bootstrap_std_vs_dws`,
+`bootstrap_sample_misfit`, `bootstrap_hypocentre_scatter`. Summary: `bootstrap_median_vp_std_kms`,
+`bootstrap_max_vp_std_kms`, `bootstrap_median_std_pct`, `bootstrap_max_std_pct` (inside the
+coverage when DWS is available), `bootstrap_samples_ok`. Checks: `bootstrap_failed` (fewer than two
+samples succeeded; the stage still completes), `bootstrap_few_samples` (fewer than
+`min_ok_fraction` succeeded), `bootstrap_high_std` (median std above `std_warn_pct`).
+
+Keys (`validation.bootstrap.*`): `enabled`, `method` (`bootstrap`/`jackknife`), `n_samples`, `seed`,
+`max_concurrent`, `iterations`, `delete_fraction`, `interval_percent`, `min_free_disk_gb`,
+`min_ok_fraction` (default 0.8), `std_warn_pct` (default 3). Re-running skips finished samples.
+`osv plot validation` does not redraw the bootstrap figures (they are made during the run).
+
 ## Config keys (`validation.*`)
 
 - `enabled` (default true): when false the stage completes with empty outputs.
