@@ -65,9 +65,25 @@ def init_cmd(
 
 
 @app.command("doctor")
-def doctor_cmd() -> None:
-    """Check the installation and external tools."""
-    _not_implemented("doctor")
+def doctor_cmd(
+    quick: bool = typer.Option(False, "--quick", help="Skip the smoke tests."),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+    gridloc: bool = typer.Option(
+        False, "--gridloc", help="Also run the gridloc smoke test (about 35 s)."
+    ),
+    config: Path | None = typer.Option(
+        None, "--config", "-c", help="Project config: also check workdir and data size."
+    ),
+) -> None:
+    """Check the installation and external tools, and run smoke tests."""
+    from osv import doctor
+
+    checks = doctor.run_doctor(quick=quick, config=config, gridloc=gridloc)
+    if json_out:
+        typer.echo(doctor.to_json(checks, quick=quick))
+    else:
+        typer.echo(doctor.render_text(checks))
+    raise typer.Exit(code=doctor.exit_code(checks))
 
 
 def _load_cfg(config: Path) -> OSVConfig:

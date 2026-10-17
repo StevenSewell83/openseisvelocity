@@ -1,0 +1,104 @@
+******* CONTROL-FILE FOR PROGRAM  V E L E S T  (28-SEPT1993) *******
+***
+*** ( all lines starting with  *  are ignored! )
+*** ( where no filename is specified, 
+***   leave the line BLANK. Do NOT delete!)
+***
+*** next line contains a title (printed on output):
+RK-NM_2012-2015_velMC_Run 1_999
+***  olat       olon   icoordsystem      zshift   itrial ztrial    ised
+  38.5500    176.1940      0            0.000      0     0.00       0
+***
+*** neqs   nshot   rotate
+      25      0      0.0
+***
+*** isingle   iresolcalc
+       0          0
+***
+*** dmax    itopo    zmin     veladj    zadj   lowveloclay
+   1000.0     0      0.00       0.20    1.00       1
+***
+***
+     2      0.50    1.75         2
+***
+***   othet   xythet    zthet    vthet   stathet
+       0.01     0.01     0.01      1.0      0.01
+***
+*** nsinv   nshcor   nshfix     iuseelev    iusestacorr
+       1       0       0           1            0
+***
+*** iturbo    icnvout   istaout   ismpout
+       0         1         1         0
+***
+*** irayout   idrvout   ialeout   idspout   irflout   irfrout   iresout
+       0         0         0         0         0         0         0
+***
+*** delmin   ittmax   invertratio
+    0.010      09          1
+***
+*** Modelfile:
+in.mod
+***
+*** Stationfile:
+in.sta
+***
+*** Seismofile:
+                                                                                
+***
+*** File with region names:
+
+***
+*** File with region coordinates:
+
+***
+*** File #1 with topo data:
+                                                                                
+***
+*** File #2 with topo data:
+                                                                                
+***
+*** DATA INPUT files:
+***
+*** File with Earthquake data:
+in.cnv
+***
+*** File with Shot data:
+
+***
+*** Main print output file:
+velest.out
+***
+*** File with single event locations:
+
+***
+*** File with final hypocenters in *.cnv format:
+
+***
+*** File with new station corrections:
+
+***
+*** File with summary cards (e.g. for plotting):
+
+***
+*** File with raypoints:
+
+***
+*** File with derivatives:
+
+***
+*** File with ALEs:
+
+***
+*** File with Dirichlet spreads:
+
+***
+*** File with reflection points:
+
+***
+*** File with refraction points:
+
+***
+*** File with residuals:
+
+***
+******* END OF THE CONTROL-FILE FOR PROGRAM  V E L E S T  *******

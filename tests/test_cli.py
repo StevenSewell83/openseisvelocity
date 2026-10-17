@@ -32,7 +32,17 @@ def test_version_flag_and_command() -> None:
         [c]
         for c in COMMANDS
         if c
-        not in ("config", "version", "init", "run", "plot", "prep", "velest-mc", "velest-analyse")
+        not in (
+            "config",
+            "version",
+            "init",
+            "run",
+            "plot",
+            "prep",
+            "velest-mc",
+            "velest-analyse",
+            "doctor",
+        )
     ],
 )
 def test_placeholders_exit_1(args: list[str]) -> None:

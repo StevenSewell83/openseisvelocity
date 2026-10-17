@@ -110,6 +110,28 @@ or set `OSV_TOOLS_DIR=<env>/bin/osv-tools`. To rebuild: `./install.sh --clean`.
 paths in the same build directory; the installer uses a separate CMake build directory per
 environment (`build/install-*`), so re-running is safe.
 
+**Reading the `osv doctor` report.** `osv doctor` prints each check as OK, WARN or FAIL with a
+fix for every problem; the exit code is 1 if anything failed. Options: `--quick` skips the smoke
+tests, `--json` gives machine-readable output, `--config config.yaml` also checks the project
+workdir (write permission, free space, `n_jobs`) and compares the VELEST array limits with the
+number of events, stations and picks per event from Stage 1, and `--gridloc` adds a ~35 s
+FMTOMO Extras test. Common results:
+
+- *`tool:... found on PATH`* (WARN): an old or unrelated binary may shadow the osv build. Run
+  `./install.sh` or set `OSV_TOOLS_DIR`.
+- *`tool:... not found`* (FAIL): the executable was not built or was renamed or moved. Rebuild
+  with `./install.sh --clean`. Missing FMTOMO Extras are only a warning.
+- *`needs missing shared libraries`* (FAIL): activate the environment used for the build
+  (`conda activate osv`) so `libgfortran` is found.
+- *`smoke:velest` / `smoke:fm3d` FAIL*: the built program ran but its results differ from the
+  stored reference (miscompiled, e.g. with `-ffast-math`), or it crashed. Rebuild with
+  `./install.sh --clean`; the message names the run directory with the logs.
+- *`project:ieq` / `project:ist` / `project:maxobs` FAIL*: your data exceed the VELEST array
+  limits. Rebuild with e.g. `./install.sh --velest-ieq 20000`.
+- *`disk:tmp` WARN* (less than 5 GB free): point `TMPDIR` at a larger disk.
+- *`build:compiler` WARN*: no `build_info.json` in `share/osv-tools`; rebuild to record the
+  compiler, flags and array limits.
+
 ## Uninstall
 
 ```bash

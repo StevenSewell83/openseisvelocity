@@ -150,3 +150,22 @@ if(OSV_BUILD_EXTRAS)
     osv_install_script("${EXT}/source/${s}" "${OSV_EXTRAS_PREFIX}${s}")
   endforeach()
 endif()
+
+# ---------------------------------------------------------------- build_info.json
+# Record how this build was made (read by `osv doctor`).
+execute_process(COMMAND git -C "${CMAKE_CURRENT_SOURCE_DIR}" rev-parse --short HEAD
+                OUTPUT_VARIABLE _osv_git OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+if(NOT _osv_git)
+  set(_osv_git "unknown")
+endif()
+string(TIMESTAMP _osv_time "%Y-%m-%dT%H:%M:%SZ" UTC)
+string(REPLACE ";" " " _vflags_str "${_vflags}")
+string(STRIP "${CMAKE_Fortran_FLAGS} ${CMAKE_Fortran_FLAGS_RELEASE}" _osv_flags)
+if(OSV_BUILD_VELEST)
+  set(_osv_limits "\"ieq\": ${OSV_VELEST_IEQ}, \"ist\": ${OSV_VELEST_IST}, \"inltot\": ${OSV_VELEST_INLTOT}, \"itotmodels\": ${OSV_VELEST_ITOTMODELS}, \"inshot\": ${OSV_VELEST_INSHOT}, \"maxobs\": ${OSV_VELEST_MAXOBS}")
+else()
+  set(_osv_limits "")
+endif()
+file(WRITE "${CMAKE_BINARY_DIR}/build_info.json"
+"{\"compiler\": \"${CMAKE_Fortran_COMPILER}\", \"compiler_id\": \"${CMAKE_Fortran_COMPILER_ID}\", \"compiler_version\": \"${CMAKE_Fortran_COMPILER_VERSION}\", \"flags\": \"${_osv_flags}\", \"velest_flags\": \"${_vflags_str}\", \"build_type\": \"${CMAKE_BUILD_TYPE}\", \"velest_limits\": {${_osv_limits}}, \"extras_prefix\": \"${OSV_EXTRAS_PREFIX}\", \"git_commit\": \"${_osv_git}\", \"built_at\": \"${_osv_time}\"}\n")
+install(FILES "${CMAKE_BINARY_DIR}/build_info.json" DESTINATION "${OSV_DATA_DIR}")
