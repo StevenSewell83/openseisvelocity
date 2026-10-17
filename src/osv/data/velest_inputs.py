@@ -61,6 +61,7 @@ from osv.io.velest import (
     write_stations,
 )
 from osv.report.checks import QCFinding
+from osv.velest.vpvs import nsp_for_mode
 
 logger = logging.getLogger(__name__)
 
@@ -559,8 +560,12 @@ def write_velest_inputs(
         iuseelev=1,
         zmin=zmin,
         dmax=float(cfg.data_selection.max_epi_dist_km),
-        nsp=2,
-        vpvs=float(vcfg.vpvs.value),
+        nsp=nsp_for_mode(vcfg.vpvs.mode),
+        vpvs=(
+            float(sum(vcfg.vpvs.range) / 2.0)
+            if vcfg.vpvs.mode == "sampled"
+            else float(vcfg.vpvs.value)
+        ),
         othet=vcfg.damping.othet,
         xythet=vcfg.damping.xythet,
         zthet=vcfg.damping.zthet,

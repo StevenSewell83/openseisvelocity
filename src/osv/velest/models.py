@@ -246,8 +246,12 @@ def write_trial_models(
     vdamp: float | list[float] | np.ndarray = 1.0,
     *,
     parquet: bool = True,
+    nmod: int = 2,
 ) -> list[Path]:
-    """Write one VELEST ``.mod`` file per model (P and S blocks) into ``outdir``.
+    """Write one VELEST ``.mod`` file per model into ``outdir``.
+
+    ``nmod = 2`` (``nsp = 2``) writes P and S blocks; ``nmod = 1`` (``nsp = 1``/``3``, S
+    from ``vp / vpvs``) writes only the P block, which is all VELEST reads then.
 
     Files are named ``<id>.mod``.  ``vdamp`` is a scalar or one value per layer.
     Values are rounded to the file precision (0.01 km/s, 0.01 km).  With ``parquet``
@@ -259,10 +263,14 @@ def write_trial_models(
         vd = _vdamp_array(vdamp, m.n_layers)
         blocks = []
         for label, vel in (("P", m.vp), ("S", m.vs)):
+            if label == "S" and nmod != 2:
+                blocks.append(None)
+                continue
             lay = pd.DataFrame({"vel": vel, "depth": m.depths, "vdamp": vd})
             blocks.append(ModelBlock(lay, label=f"{label} {m.id}"))
         title = f"{m.id} {m.sampler}"[:40]
-        paths.append(write_model(out / f"{m.id}.mod", VelestModel(title, blocks[0], blocks[1])))
+        s_block = blocks[1] if nmod == 2 else None
+        paths.append(write_model(out / f"{m.id}.mod", VelestModel(title, blocks[0], s_block)))
     if parquet:
         save_trial_models_parquet(models, out / "trial_models.parquet")
     return paths

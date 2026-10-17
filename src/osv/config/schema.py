@@ -298,8 +298,9 @@ class VpVsConfig(_Base):
 
     mode: Literal["fixed", "sampled", "independent_s_model"] = F(
         "fixed",
-        "'fixed' uses 'value'; 'sampled' draws Vp/Vs uniformly from 'range'; "
-        "'independent_s_model' samples a separate S velocity model.",
+        "'fixed' uses 'value' and 'sampled' draws one Vp/Vs per model from 'range'; both run "
+        "VELEST with nsp=3 (S picks used with Vs = Vp/vpvs, only a P model inverted). "
+        "'independent_s_model' samples a separate S velocity model (nsp=2).",
     )
     value: float = F(1.75, "Vp/Vs ratio for mode 'fixed'.", gt=1.0)
     range: Bounds = F((1.65, 1.85), "[min, max] Vp/Vs for mode 'sampled'.")
@@ -325,6 +326,42 @@ class HypocentrePerturbation(_Base):
     xy: float = F(1.0, "Horizontal perturbation, km.", ge=0)
     z: float = F(1.0, "Vertical perturbation, km.", ge=0)
     n_tests: int = F(50, "Number of perturbed relocation tests.", ge=0)
+    distribution: Literal["uniform", "gaussian"] = F(
+        "uniform",
+        "Offset distribution: 'uniform' in [-xy, xy] per horizontal axis and [-z, z] in depth; "
+        "'gaussian' with standard deviations xy and z.",
+    )
+
+
+class StabilityConfig(_Base):
+    """Stability tests of the final 1-D model (Stage 2, task 3.5)."""
+
+    fixed_vthet: float = F(
+        1.0e5,
+        "Velocity damping (vthet) that keeps velocities fixed in the fixed-model runs "
+        "(scale = sqrt(othet/vthet), velest.f SETUNT). 1e5 holds velocities to < 0.01 km/s; "
+        "values of 1e8 or more overflow VELEST's control-file reader.",
+        gt=0, le=1.0e7,
+    )  # fmt: skip
+    reference_stations: list[str] = F(
+        [], "Alternative reference stations (aliases); empty selects them automatically."
+    )
+    n_reference_stations: int = F(
+        3, "Number of automatically chosen alternative reference stations.", ge=0
+    )
+    lvz_test: bool = F(True, "Run the low-velocity-layer on/off test.")
+    horizontal_mislocation_warn_km: float = F(
+        0.5, "Warn when the mean horizontal mislocation exceeds this (km).", gt=0
+    )
+    vertical_mislocation_warn_km: float = F(
+        0.5, "Warn when the mean vertical mislocation exceeds this (km).", gt=0
+    )
+    velocity_spread_warn_km_s: float = F(
+        0.2, "Warn when a layer's Vp spread over the perturbed free runs exceeds this.", gt=0
+    )
+    reference_swap_dv_warn_km_s: float = F(
+        0.1, "Warn when a reference-station swap changes a layer's Vp by more than this.", gt=0
+    )
 
 
 class VelestDamping(_Base):
@@ -464,7 +501,14 @@ class VelestConfig(_Base):
         HypocentrePerturbation, "Starting hypocentre perturbation tests."
     )
     damping: VelestDamping = FF(VelestDamping, "VELEST damping factors.")
-    ittmax: int = F(9, "Maximum VELEST iterations per run.", ge=1)
+    ittmax: int = F(
+        30,
+        "Maximum VELEST iterations per run (also the default of every stage). Real data "
+        "rarely meets VELEST's own stop rule: 0/40 runs stopped before the limit at 9, 30 "
+        "or 60, but the median final RMS fell from 0.0945 (9) to 0.0738 (30) and stayed "
+        "flat beyond.",
+        ge=1,
+    )
     invertratio: int = F(
         1, "VELEST 'invertratio': invert for velocities every N-th iteration.", ge=0
     )
@@ -475,6 +519,7 @@ class VelestConfig(_Base):
         "starts from the previous stage's model (and optionally hypocentres and station "
         "delays). An empty list runs a single stage with the top-level damping.",
     )
+    stability: StabilityConfig = FF(StabilityConfig, "Stability tests of the final model.")
     reseed: ReseedConfig = FF(ReseedConfig, "Reseeded rounds from the best models.")
     iterate_until: IterateUntilConfig = FF(
         IterateUntilConfig, "Repeat VELEST on the final model until changes are negligible."

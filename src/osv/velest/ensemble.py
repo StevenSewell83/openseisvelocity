@@ -202,21 +202,35 @@ def _model_rows(rid: str, parsed: Any, trial: pd.DataFrame | None) -> list[pd.Da
     rs = parsed.ray_statistics
     if rs is not None and len(rs):
         hits = pd.Series(rs["nhit"].to_numpy(dtype=float), index=rs["nlay"].astype(int) - 1)
+    ctrl = getattr(parsed, "control", None) or {}
+    ratio = float(ctrl.get("vpvs", math.nan)) if ctrl.get("nsp") == 3 else math.nan
     for phase in ("P", "S"):
         fb = fm.p if phase == "P" else fm.s
+        derived = False
+        if fb is None and phase == "S" and np.isfinite(ratio) and ratio > 0:
+            # nsp = 3 (fixed/sampled Vp/Vs): no S block was inverted, Vs = Vp / vpvs
+            # (velest.f:4357) with this run's ratio.
+            fb = fm.p
+            derived = True
         if fb is None:
             continue
         ib = im.p if (im is not None and phase == "P") else (im.s if im is not None else None)
+        if derived and im is not None:
+            ib = im.p
         lay = fb.layers
         n = len(lay)
         if ib is not None and len(ib.layers) == n:
             v0 = ib.layers["vel"].to_numpy(dtype=float)
+            if derived:
+                v0 = v0 / ratio
         elif trial is not None and phase in ("P", "S") and rid in trial.index.get_level_values(0):
             t = trial.loc[rid]
             v0 = t["vp" if phase == "P" else "vs"].to_numpy(dtype=float)
         else:
             v0 = np.full(n, np.nan)
         v1 = lay["vel"].to_numpy(dtype=float)
+        if derived:
+            v1 = v1 / ratio
         out.append(
             pd.DataFrame(
                 {
@@ -492,7 +506,7 @@ def analyse_ensemble(
 
     def spread(a: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         if not np.isfinite(a).any():
-            nan = np.full(a.shape[1], np.nan)
+            nan = np.full(vp.shape[1], np.nan)  # also when there is no S block at all
             return nan, nan, nan
         sd = np.nanstd(a, axis=0, ddof=1) if a.shape[0] > 1 else np.zeros(a.shape[1])
         return sd, np.nanpercentile(a, 5, axis=0), np.nanpercentile(a, 95, axis=0)

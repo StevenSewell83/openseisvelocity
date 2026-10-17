@@ -49,6 +49,7 @@ from osv.io.velest import (
 )
 from osv.velest.models import TrialModel
 from osv.velest.runner import STATUS_FAILED, STATUS_OK, VelestJob, run_jobs
+from osv.velest.vpvs import model_vpvs
 
 logger = logging.getLogger(__name__)
 
@@ -114,11 +115,13 @@ class IterationResults(list):
 
     history: pd.DataFrame
     converged: bool
+    best_cycle: int | None
 
     def __init__(self, items: Sequence[Any] = ()) -> None:
         super().__init__(items)
         self.history = pd.DataFrame()
         self.converged = False
+        self.best_cycle = None  # 1-based cycle with the lowest RMS (the last one may be worse)
 
 
 # ----------------------------------------------------------------------------------------
@@ -162,8 +165,12 @@ def resolve_stages(cfg: Any) -> list[DampingStage]:
     return out
 
 
-def _stage_control(base: VelestControl, st: DampingStage, use_stacorr: bool) -> VelestControl:
+def _stage_control(
+    base: VelestControl, st: DampingStage, use_stacorr: bool, vpvs: float | None = None
+) -> VelestControl:
     c = copy.deepcopy(base)
+    if vpvs is not None and c.nsp == 3:
+        c.vpvs = float(vpvs)
     c.othet, c.xythet, c.zthet = float(st.othet), float(st.xythet), float(st.zthet)  # type: ignore[arg-type]
     c.vthet, c.stathet = float(st.vthet), float(st.stathet)  # type: ignore[arg-type]
     c.ittmax, c.invertratio = int(st.ittmax), int(st.invertratio)  # type: ignore[arg-type]
@@ -172,12 +179,16 @@ def _stage_control(base: VelestControl, st: DampingStage, use_stacorr: bool) -> 
     return c
 
 
-def _trial_to_velest(m: TrialModel) -> VelestModel:
+def _trial_to_velest(m: TrialModel, nmod: int = 2) -> VelestModel:
     blocks = []
     for label, vel in (("P", m.vp), ("S", m.vs)):
+        if label == "S" and nmod != 2:
+            break
         lay = pd.DataFrame({"vel": vel, "depth": m.depths, "vdamp": 1.0})
         blocks.append(ModelBlock(lay, label=f"{label} {m.id}"))
-    return VelestModel(f"{m.id} {m.sampler}"[:40], blocks[0], blocks[1])
+    return VelestModel(
+        f"{m.id} {m.sampler}"[:40], blocks[0], blocks[1] if len(blocks) > 1 else None
+    )
 
 
 def _velest_to_trial(
@@ -254,6 +265,7 @@ class _Entry:
     cur_corr: pd.DataFrame | None = None
     alive: bool = True
     last_row: dict[str, Any] | None = None
+    vpvs: float | None = None  # per-model ratio (nsp=3 runs); None: the control's value
 
 
 def _corr_station_file(base: Path, corr: pd.DataFrame, out: Path) -> Path:
@@ -273,8 +285,8 @@ def _corr_station_file(base: Path, corr: pd.DataFrame, out: Path) -> Path:
     return out
 
 
-def _model_path(entry_model: TrialModel | VelestModel, out: Path) -> Path:
-    vm = _trial_to_velest(entry_model) if isinstance(entry_model, TrialModel) else entry_model
+def _model_path(entry_model: TrialModel | VelestModel, out: Path, nmod: int = 2) -> Path:
+    vm = _trial_to_velest(entry_model, nmod) if isinstance(entry_model, TrialModel) else entry_model
     out.parent.mkdir(parents=True, exist_ok=True)
     return write_model(out, vm)
 
@@ -331,8 +343,8 @@ def _run_schedule(
             if first and isinstance(e.model, TrialModel):
                 model: Path | TrialModel = e.model
             else:
-                model = _model_path(e.model, inp / f"{e.id}.mod")
-            ctrl = _stage_control(inputs.control, st, corr is not None)
+                model = _model_path(e.model, inp / f"{e.id}.mod", inputs.control.nmod)
+            ctrl = _stage_control(inputs.control, st, corr is not None, e.vpvs)
             jobs.append(VelestJob(e.id, model, ctrl, cnv, sta))
         logger.info(
             "round %d stage %d/%d (%s): %d runs", round_no, k, len(stages), st.name, len(jobs)
@@ -423,9 +435,14 @@ def run_mc_workflow(
     rootp = Path(root)
     rootp.mkdir(parents=True, exist_ok=True)
     base_cnv = Path(inputs.cnv_path)
-    entries = [_Entry(m.id, None, m.id, m, base_cnv, None) for m in models]
+    nsp3 = inputs.control.nsp == 3
+    entries = [
+        _Entry(m.id, None, m.id, m, base_cnv, None, vpvs=model_vpvs(m) if nsp3 else None)
+        for m in models
+    ]
     hist, last = _run_schedule(entries, inputs, stages, rootp, 1, n_jobs, timeout, force, compact)
     all_last = list(last)
+    all_entries = list(entries)
     final_models = _collect_models(entries, inputs, _seed(cfg, seed))
 
     prev_rows = pd.DataFrame(last)
@@ -443,6 +460,7 @@ def run_mc_workflow(
             rng = np.random.default_rng([_seed(cfg, seed), rnd])
             by_id = {r["id"]: r for r in prev_rows.to_dict("records")}
             new: list[_Entry] = []
+            seed_vpvs = {e.id: e.vpvs for e in all_entries}
             for sid in seeds:
                 r = by_id[sid]
                 parsed = r["parsed"]
@@ -463,13 +481,18 @@ def run_mc_workflow(
                         if rs.perturb_vp_km_s > 0
                         else sm
                     )
-                    new.append(_Entry(f"{sid}_r{rnd}_{c:02d}", sid, origin, m, cnv, corr))
+                    new.append(
+                        _Entry(
+                            f"{sid}_r{rnd}_{c:02d}", sid, origin, m, cnv, corr, vpvs=seed_vpvs[sid]
+                        )
+                    )
             logger.info("reseed round %d: %d seeds x %d copies", rnd, len(seeds), n_copies)
             h, last = _run_schedule(
                 new, inputs, stages, rootp, rnd, n_jobs, timeout, force, compact
             )
             hist += h
             all_last += last
+            all_entries += new
             final_models.update(_collect_models(new, inputs, _seed(cfg, seed)))
             prev_rows = pd.DataFrame(last)
             if prev_rows.empty:
@@ -490,7 +513,8 @@ def _collect_models(entries: list[_Entry], inputs: InputsLike, seed: int) -> dic
     for i, e in enumerate(entries):
         r = e.last_row
         if r is not None and r.get("status") == STATUS_OK and isinstance(e.model, VelestModel):
-            out[e.id] = _velest_to_trial(e.model, e.id, float(inputs.control.vpvs), seed, i)
+            ratio = e.vpvs if e.vpvs is not None else float(inputs.control.vpvs)
+            out[e.id] = _velest_to_trial(e.model, e.id, ratio, seed, i)
     return out
 
 
@@ -522,6 +546,7 @@ def iterate_final_model(
     corrections: pd.DataFrame | None = None,
     timeout: float | None = 3600.0,
     force: bool = False,
+    vpvs: float | None = None,
 ) -> IterationResults:
     """Repeat VELEST from its own outputs until the changes are negligible.
 
@@ -540,6 +565,9 @@ def iterate_final_model(
     cnv_path, corrections
         Optional starting hypocentres (CNV) and station delays (a ``station_corrections``
         table) instead of the original inputs.
+    vpvs
+        Vp/Vs ratio for ``nsp = 3`` runs (default: the ratio of a ``TrialModel``, else the
+        control's).
 
     Returns
     -------
@@ -553,7 +581,9 @@ def iterate_final_model(
     rootp = Path(root) / "iterate"
     results = IterationResults()
     if isinstance(model, TrialModel):
-        cur = _trial_to_velest(model)
+        cur = _trial_to_velest(model, inputs.control.nmod)
+        if vpvs is None and inputs.control.nsp == 3:
+            vpvs = model_vpvs(model)
     elif isinstance(model, VelestModel):
         cur = model
     else:
@@ -570,8 +600,8 @@ def iterate_final_model(
             if corr is not None
             else Path(inputs.sta_path)
         )
-        mod = _model_path(cur, inp / f"{cid}.mod")
-        ctrl = _stage_control(inputs.control, st, corr is not None)
+        mod = _model_path(cur, inp / f"{cid}.mod", inputs.control.nmod)
+        ctrl = _stage_control(inputs.control, st, corr is not None, vpvs)
         job = VelestJob(cid, mod, ctrl, cnv, sta)
         df = run_jobs([job], rootp, n_jobs=1, timeout=timeout, force=force, progress=False)
         row = next(df.itertuples())
@@ -617,6 +647,16 @@ def iterate_final_model(
         columns=["cycle", "rms", "model_change_km_s", "hypo_change_km", "converged", "run_dir"],
     )
     results.converged = bool(rows and rows[-1]["converged"])
+    rms_ok = results.history["rms"].dropna()
+    if len(rms_ok):
+        results.best_cycle = int(results.history.loc[rms_ok.idxmin(), "cycle"])
+        if results.best_cycle != len(results.history):
+            logger.warning(
+                "iterate: RMS is lowest in cycle %d, not the last (%d); VELEST returns its "
+                "last accepted model, so later cycles drifted - use that cycle's model",
+                results.best_cycle,
+                len(results.history),
+            )
     if rows:
         rootp.mkdir(parents=True, exist_ok=True)
         results.history.to_csv(rootp / "convergence.csv", index=False)

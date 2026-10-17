@@ -50,6 +50,27 @@ All references below were verified in the vendored sources / manuals:
   surface (`velest.f:1859`). Station z is `-elev/1000`; the top of model layer 2 must not
   coincide with a station depth (UG p. 20: put it at `+0.05` km if elevations are not used).
 
+* **nsp / vpvs / swtfac / nmod** (`velest.f:1118-1128`, line numbers of `fortran/velest/velest.f`):
+  * `nsp = 1`: P model and **P data only**. S readings (`S`, `s`) and S-P (`-`) are skipped
+    when the phases are read (`velest.f:1892-1894`), so S picks are *not* used.
+  * `nsp = 2`: independent S model. VELEST forces `nmod = 2` and reads two blocks from the
+    model file; S travel times use the S model and the S station delays `stcor`
+    (`velest.f:2766`, `2119-2150`).
+  * `nsp = 3`: **S picks with a constant Vp/Vs**. Only the P model is read and inverted
+    (`nmod` is forced to 1); every S ray is traced in the P layers with `Vs = Vp/vpvs`
+    (`velest.f:4357-4360`), the S station delay is `ptcor * vpvs` (`velest.f:2767`,
+    `4517`) and S readings give no station-delay partials (`velest.f:4100`). `vpvs` is read
+    list-directed from the control line. Velocity changes of the P model are therefore
+    constrained by P and S together, with the ratio held fixed.
+  * `swtfac` multiplies the weight of S (and S-P) observations
+    (`w = swtfac / 2**(2*ipwt)`, `velest.f:2077`, `2106`, `5782`); it is used for `nsp = 2`
+    and `3` alike and does nothing when S picks are dropped (`nsp = 1`).
+  * osv maps `velest.vpvs.mode` `fixed` and `sampled` to `nsp = 3` (the first with the
+    configured `value`, the second with the model's own ratio per job) and
+    `independent_s_model` to `nsp = 2`. `nsp = 1` is never used. Model files hold only the
+    P block when `nmod = 1`. In ensemble outputs `vs = vp / vpvs` with each run's ratio
+    for `nsp = 3` runs (`final_model.mod` still carries an informational S block).
+
 ## Depth datum
 
 Catalogue depths (QuakeML/NLLoc) may be relative to sea level, to the local ground

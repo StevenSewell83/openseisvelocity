@@ -113,8 +113,22 @@ def jobs_from_models(
     sta_path: Path | str,
     **kwargs: Any,
 ) -> list[VelestJob]:
-    """One :class:`VelestJob` per trial model, sharing ``control`` and the inputs."""
-    return [VelestJob(m.id, m, control, cnv_path, sta_path, **kwargs) for m in models]
+    """One :class:`VelestJob` per trial model, sharing ``control`` and the inputs.
+
+    With ``control.nsp == 3`` (fixed/sampled Vp/Vs: S uses ``vp / vpvs``) each job gets its
+    own control copy whose ``vpvs`` is the model's ratio, so ``sampled`` models are run
+    with their own ratio.
+    """
+    jobs = []
+    for m in models:
+        ctrl = control
+        if control.nsp == 3:
+            from osv.velest.vpvs import model_vpvs
+
+            ctrl = copy.deepcopy(control)
+            ctrl.vpvs = model_vpvs(m)
+        jobs.append(VelestJob(m.id, m, ctrl, cnv_path, sta_path, **kwargs))
+    return jobs
 
 
 def _link_or_copy(src: Path, dst: Path) -> None:
@@ -143,7 +157,9 @@ def prepare_run_dir(job: VelestJob, root: str | Path) -> Path:
     # model
     dst_mod = run_dir / MODEL_NAME
     if isinstance(job.model, TrialModel):
-        written = write_trial_models([job.model], run_dir, job.vdamp, parquet=False)[0]
+        written = write_trial_models(
+            [job.model], run_dir, job.vdamp, parquet=False, nmod=job.control.nmod
+        )[0]
         os.replace(written, dst_mod)
     else:
         src = Path(job.model).resolve()
