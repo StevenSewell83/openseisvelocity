@@ -1038,6 +1038,12 @@ class FmtomoConfig(_Base):
     source_damping_time: float = F(
         1.0, "Relative damping of linear origin-time updates (invert3d damp2).", ge=0
     )
+    source_uncertainty_km: float = F(
+        1.0,
+        "A priori hypocentre uncertainty (depth and horizontal, km) written to sources.in for "
+        "linear relocation; invert3d damps source updates by it.",
+        gt=0,
+    )
     min_velocity_km_s: float = F(0.5, "Minimum velocity permitted by invert3d, km/s.", gt=0)
     min_interface_distance_km: float = F(
         0.07, "Minimum distance between interfaces kept by invert3d, km.", ge=0
@@ -1141,6 +1147,20 @@ class HypocentreNoiseConfig(_Base):
     z: float = F(0.0, "Gaussian sigma of the depth, km (0 = true depths).", ge=0)
 
 
+class ResolutionMaskConfig(_Base):
+    """Recovery metrics and the combined resolvable mask (Stage 6)."""
+
+    min_corr: float = F(0.5, "Minimum local correlation (true vs recovered).", ge=-1, le=1)
+    min_amplitude: float = F(0.3, "Minimum local amplitude recovery (regression slope).", ge=0)
+    window_km: float | None = F(
+        None,
+        "Full width of the Gaussian moving window, km (null = the checkerboard cell size of each "
+        "test).",
+        gt=0,
+    )
+    combine_with_dws: bool = F(True, "AND the resolvable mask with the DWS coverage mask.")
+
+
 class ResolutionConfig(_Base):
     """Resolution tests (Stage 6)."""
 
@@ -1164,6 +1184,9 @@ class ResolutionConfig(_Base):
     noise: NoiseConfig = FF(NoiseConfig, "Noise added to synthetic data.")
     hypocentre_noise_km: HypocentreNoiseConfig = FF(
         HypocentreNoiseConfig, "Perturbation of the starting hypocentres of the test inversions."
+    )
+    mask: ResolutionMaskConfig = FF(
+        ResolutionMaskConfig, "Recovery thresholds of the resolvable mask."
     )
 
 
