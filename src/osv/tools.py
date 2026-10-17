@@ -170,7 +170,7 @@ def _is_exec(p: Path) -> bool:
 def _search_dirs() -> list[Path]:
     dirs: list[Path] = []
     if os.environ.get(ENV_TOOLS_DIR):
-        dirs.append(Path(os.environ[ENV_TOOLS_DIR]).expanduser())
+        dirs.append(Path(os.environ[ENV_TOOLS_DIR]).expanduser().resolve())
     if os.environ.get("CONDA_PREFIX"):
         dirs.append(Path(os.environ["CONDA_PREFIX"]) / "bin" / "osv-tools")
     # Environment the interpreter runs from (venv installs by install.sh --venv work

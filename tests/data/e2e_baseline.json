@@ -14,13 +14,13 @@
       4.832,
       5.016
     ],
-    "final_rms_ms_P": 111.59,
-    "variance_reduction_pct_P": 52.6,
-    "validation_median_3d_rms_s": 0.019594048675542174
+    "final_rms_ms_P": 39.37,
+    "variance_reduction_pct_P": 68.7,
+    "validation_median_3d_rms_s": 0.01819333229141531
   },
   "tolerance": {
     "layer_vp_km_s": 0.35,
     "rms_relative": 0.5,
-    "min_variance_reduction_pct": 26.3
+    "min_variance_reduction_pct": 34.35
   }
 }

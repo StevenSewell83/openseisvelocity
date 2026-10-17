@@ -173,3 +173,11 @@ def test_venv_prefix_search(tmp_path, monkeypatch):
     exe = make_exe(tmp_path / "venv" / "bin" / "osv-tools", "velest", "exit 0")
     monkeypatch.setattr("sys.prefix", str(tmp_path / "venv"))
     assert which_tool("velest") == exe
+
+
+def test_relative_tools_dir_is_absolute(tmp_path, monkeypatch):
+    make_exe(tmp_path / "rel_bin", "velest", "exit 0")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OSV_TOOLS_DIR", "rel_bin")
+    p = which_tool("velest")
+    assert p.is_absolute() and p.name == "velest"

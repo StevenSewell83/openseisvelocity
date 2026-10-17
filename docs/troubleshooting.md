@@ -87,7 +87,7 @@ fine. Increase `model3d.grid.dx_km`/`dy_km`/`dz_km` or accept that the model is 
 
 **L-curve corner at the edge of the sweep / chi-squared far from 1 / unconverged sweep.** Widen
 the swept range, raise `fmtomo.tradeoff.iterations`, or set `damping`/`smoothing` manually. A
-reduced chi-squared of about 10 (as in the example) means the stated pick uncertainties are too small
+reduced chi-squared of about 3 (as in the example) means the stated pick uncertainties are too small
 or the 3-D model cannot explain the picks; interpret the model as a smooth correction to the 1-D
 model.
 
@@ -99,10 +99,12 @@ borehole stations be excluded?** FMTOMO cannot invert for station terms. The def
 times, so the station-scale near-surface signal, which a 0.5 km grid cannot resolve, does not
 have to be explained by the model. On rk-nm-2017 the station mean residuals correlate with the
 VELEST delays at r = 0.92. The stage 3 forward check may still warn about a mean residual and a
-weak correlation (r = 0.18) of the starting model's residuals with the delays; that compares
+weak correlation (r = 0.15) of the starting model's residuals with the delays; that compares
 different quantities and does not mean the delays should be dropped.
 
-The example was run three times with the same Stage 1-2 and 5 results (the scripts and logs are
+The example was run three times (before the origin-time fix of osv-jac.13, so the absolute numbers differ from the
+[tutorial](tutorial.md), which was rerun afterwards: P RMS 56.3 to 32.6 ms, variance reduction 66.7%; the
+comparison between the columns is what matters) with the same Stage 1-2 and 5 results (the scripts and logs are
 in `build/ab/`; `A` is the default):
 
 | | A: delays applied | B: delays off | C: `velest_station_delays_exclude: borehole` |
@@ -131,7 +133,7 @@ in a copy of the config with a separate `project.workdir`, link the Stage 1-2 an
 
 ## Poor resolution
 
-"Only 2.6% of the volume has DWS >= 0.1" and "10% of the covered volume is resolved" (the
+"Only 2.6% of the volume has DWS >= 0.1" and "50% of the covered volume is resolved at some tested scale" (with only 26% at 2 km) (the
 example) indicate sparse ray coverage. Do not interpret features outside the resolvable mask,
 which the analysis figures draw once `osv resolution` has run. To improve: use more events or
 stations, relax `data_selection` thresholds (carefully), use a coarser grid

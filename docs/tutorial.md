@@ -144,16 +144,16 @@ observed rays with `fm3d` as a forward check.
 | Propagation grid | 55 x 223 x 184 (2.26 M nodes, 0.167 km) |
 | Sources / receivers / P observations | 65 / 62 / 1847 |
 | Vp range | 2.02-5.01 km/s |
-| Forward RMS of the starting model | 0.133 s (0.042 s after removing the mean of +0.12 s) |
+| Forward RMS of the starting model | 0.056 s (0.035 s after removing the mean of +0.043 s) |
 
 ![Vp slices of the starting model](img/build_vp_slices.png)
 
 Look at: `grid_geometry`, `vp_slices`, `section_*`, and above all the forward-check figures
 `residual_histograms`, `residual_distance` and `station_residuals`. A starting model should
-fit the picks about as well as VELEST does (0.042 s here once the mean offset is removed); a
+fit the picks about as well as VELEST does (0.042 s; here 0.056 s, or 0.035 s once the mean offset is removed); a
 much worse fit means a problem with coordinates, the depth datum or station delays. Here the
-mean residual is +0.12 s, which the *residual_bias* warning flags; the inversion in Stage 4 takes
-the RMS from 133 to 57 ms. Details: [Stage 3](stage3_model.md).
+mean residual is +0.043 s, which the *residual_bias* warning flags; the inversion in Stage 4 takes
+the RMS from 56 to 33 ms. Details: [Stage 3](stage3_model.md).
 
 Typical warnings:
 
@@ -161,9 +161,9 @@ Typical warnings:
   the data cannot constrain such a fine grid; the regularisation will do most of the work.
 * *"21 receiver(s) were above the interpolated surface; surface lifted locally"* - station
   elevations versus the smoothed surface (`model3d.surface_smoothing_km`).
-* *"7 P residuals beyond 5 robust standard deviations"* - look at the stations involved.
-* *"P residuals have mean +0.120 s"* and *"mean P residuals correlate with the VELEST station
-  delays with r = 0.18"* - the starting model is systematically fast for these picks; see
+* *"6 P residuals beyond 5 robust standard deviations"* - look at the stations involved.
+* *"P residuals have mean +0.043 s"* and *"mean P residuals correlate with the VELEST station
+  delays with r = 0.15"* - the starting model is systematically fast for these picks; see
   [borehole stations and station delays](troubleshooting.md#borehole-stations-and-station-delays)
   for why the VELEST delays are still applied.
 
@@ -181,10 +181,10 @@ inversion with the chosen values (or the ones you fix in `fmtomo`) and relocates
 | | Result |
 |---|---|
 | Chosen damping / smoothing (P) | 0.05 / 10 (maximum curvature, 14 sweep runs) |
-| RMS start to final | 133 to 56.7 ms (57.4% misfit reduction, 81.9% variance reduction) |
-| Reduced chi-squared | 10.3 |
-| Median hypocentre shift | 0.30 km |
-| Covered fraction of nodes (DWS) | 2.7% |
+| RMS start to final | 56.3 to 32.6 ms (42.1% misfit reduction, 66.7% variance reduction) |
+| Reduced chi-squared | 2.8 |
+| Median hypocentre shift | 0.11 km |
+| Covered fraction of nodes (DWS) | 2.6% |
 
 ![L-curve for damping](img/tradeoff_lcurve_damping.png)
 
@@ -200,11 +200,11 @@ Typical warnings:
 * *"the corner (0.05) is next to the edge of the swept range 0.01..1000"* and the same for the
   smoothing (10, range 1..1000) - the L-curve corner may lie outside the sweep; widen it or set
   the values yourself.
-* *"12 of 14 sweep runs still changed their misfit by more than 2%"* - the sweep iterations are
+* *"14 of 14 sweep runs still changed their misfit by more than 2%"* - the sweep iterations are
   few (`fmtomo.tradeoff.iterations`); the L-curve is indicative.
 * *"misfit increased after iteration 3"* - the linearised step overshoots in the last
   iterations; raise the damping or the smoothing, or stop earlier.
-* *"reduced chi-squared is 10.31, not near 1"* - the stated pick uncertainties are smaller than
+* *"reduced chi-squared is 2.82, not near 1"* - the stated pick uncertainties are smaller than
   the achievable fit; the inversion is an RMS reduction, not a statistical fit.
 
 ## Stage 5: analyse the inversion (`osv analyse`, 11 s)
@@ -216,14 +216,14 @@ osv analyse -c config.yaml
 Computes perturbation statistics, produces the figures and the exports (NetCDF, CSV, VTK) and masks everything the data cannot see (`plotting.dws_mask_threshold`).
 
 Look at: `slices_vp`, `section_a_a`, `compare_start_final_vp`, `variance_reduction`,
-`residual_vs_azimuth` and `station_residual_map`. Only 2.7% of the Vp volume has DWS of at least
+`residual_vs_azimuth` and `station_residual_map`. Only 2.6% of the Vp volume has DWS of at least
 0.1 here, so most of the model is masked; that is the data, not a bug. After running Stage 6, run
 `osv plot analyse -c config.yaml` to add the `_resolvable` figures that show only what the
 resolution tests recovered. Details: [Stage 5](stage5_analysis.md).
 
 Anomalies in the shallow (to about 2 km) core of the array are the only part of the model that
 passes both the DWS mask and the resolution tests; this is the perturbation relative to the 1-D
-model, masked to the resolvable volume (0.3% of all nodes):
+model, masked to the resolvable volume (1.4% of all nodes):
 
 ![dVp relative to the 1-D model, resolvable volume only](img/analyse_dvp_resolvable.png)
 
@@ -241,8 +241,8 @@ regularisation. Six tests ran, all succeeded.
 
 | | Result |
 |---|---|
-| Covered nodes (P) | 2350 |
-| Resolved fraction of covered nodes | 28% at 2 km, 51% at 3 km (shallower than 2.1 km: 40% / 63%; 2.1-5.3 km: 8% / 30%) |
+| Covered nodes (P) | 2257 |
+| Resolved fraction of covered nodes | 26% at 2 km, 50% at 3 km (shallower than 2.1 km: 36% / 61%; 2.1-5.3 km: 5% / 28%) |
 | Median resolved scale | 2 km (smallest anomaly of interest 1.5 km) |
 
 ![Resolved scale](img/resolution_resolved_scale.png)
@@ -265,16 +265,16 @@ model, using the same picks.
 
 | | Result |
 |---|---|
-| Median RMS, 1-D / 3-D | 20.9 / 15.7 ms (improvement 7.3 ms, 35%) |
-| Events better / worse in 3-D | 83% / 17% |
-| Wilcoxon p-value | 0.064 (one-sided 0.032) |
+| Median RMS, 1-D / 3-D | 20.9 / 15.8 ms (improvement 7.8 ms, 37%) |
+| Events better / worse in 3-D | 83% / 8% (one tie) |
+| Wilcoxon p-value | 0.027 (one-sided 0.013) |
 
 ![1-D versus 3-D RMS](img/validation_rms_scatter.png)
 
 Points below the 1:1 line in `validation_rms_scatter` are events that fit better in 3-D. A low
 fraction of better events, or a high p-value, means the 3-D model does not generalise. With
-only 12 events the test has little power: 10 of 12 events improve, but p = 0.064 is not below
-0.05 on the two-sided test. Details:
+only 12 events the test has little power: 10 of 12 events improve and p = 0.027 is below
+0.05 on the two-sided test, but a single event can still change that. Details:
 [Stage 7](stage7_validation.md).
 
 ## The project report (`osv report`)
@@ -285,7 +285,7 @@ open runs/index.html
 ```
 
 Combines everything: pipeline status (9 of 9 stages complete here), all failures and warnings
-grouped by stage (0 failures and 26 warnings in the example), headline numbers and key
+grouped by stage (0 failures and 25 warnings in the example), headline numbers and key
 figures. `10_report/summary.md` is a compact Markdown version to paste into notes.
 See [reporting](reporting.md).
 
