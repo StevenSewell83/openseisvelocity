@@ -35,6 +35,7 @@ Tables
 from __future__ import annotations
 
 import logging
+import math
 import re
 from dataclasses import dataclass, fields
 from pathlib import Path
@@ -1155,17 +1156,28 @@ _CMN_HEADER = """\
 """
 
 
+_F_MAX = 1e15
+
+
 def _f(x: float, width: int, decimals: int) -> str:
     """Right-aligned ``F{width}.{decimals}`` that gains decimals when needed to be exact.
 
     The legacy layout (``decimals``) is kept whenever it represents the value; VELEST reads
-    the file list-directed, so a longer field is harmless.
+    the file list-directed, so a longer field is harmless -- but only if it stays separated
+    from its neighbour.  A value wider than ``width`` (e.g. ``vthet=1e8``) would otherwise
+    fuse with the previous field into one bad token, so at least one leading blank is
+    always kept.  Plain fixed-point is used (no exponent) and non-finite or absurdly large
+    values are rejected.
     """
+    if not math.isfinite(x) or abs(x) >= _F_MAX:
+        raise ValueError(f"value {x!r} cannot be written to velest.cmn (need finite, |x| < 1e15)")
+    txt = f"{x:{width}.9f}"
     for d in range(decimals, 10):
-        txt = f"{x:{width}.{d}f}"
-        if abs(float(txt) - x) <= 1e-9 * max(1.0, abs(x)):
-            return txt
-    return f"{x:{width}.9f}"
+        cand = f"{x:{width}.{d}f}"
+        if abs(float(cand) - x) <= 1e-9 * max(1.0, abs(x)):
+            txt = cand
+            break
+    return txt if txt.startswith(" ") else " " + txt
 
 
 def format_control(ctrl: VelestControl, *, extended_files: bool = True) -> str:

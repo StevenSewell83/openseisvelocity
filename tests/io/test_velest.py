@@ -892,3 +892,52 @@ def test_velest_runs_on_synthetic_dataset(tmp_path: Path) -> None:
     # relocations stay near the true origin (lat -38.55, lon 176.19)
     assert (out.events["lat"] + 38.55).abs().max() < 0.1
     assert (out.events["lon"] - 176.19).abs().max() < 0.1
+
+
+@pytest.mark.parametrize("val", [1e-4, 0.5, 1e5, 1e8, 123456789.5])
+def test_control_extreme_damping_roundtrips(val: float) -> None:
+    c = VelestControl(vthet=val, othet=val, zthet=val, xythet=val, stathet=val)
+    text = format_control(c)
+    back = parse_control(text)
+    for n in ("vthet", "othet", "zthet", "xythet", "stathet"):
+        assert getattr(back, n) == pytest.approx(val, rel=1e-9)
+    # every numeric field is its own list-directed token (no fused values)
+    line = next(
+        ln
+        for ln in text.splitlines()
+        if not ln.startswith("*")
+        and len(ln.split()) == 5
+        and ln.split()[0].replace(".", "").isdigit()
+        and abs(float(ln.split()[3]) - val) < 1e-6 * val + 1e-9
+    )
+    assert len(line.split()) == 5
+
+
+@pytest.mark.parametrize("bad", [float("inf"), float("nan"), 1e20])
+def test_control_unrepresentable_value_rejected(bad: float) -> None:
+    with pytest.raises(ValueError):
+        format_control(VelestControl(vthet=bad))
+
+
+@pytest.mark.integration
+def test_velest_runs_with_large_vthet(tmp_path: Path) -> None:
+    from osv.tools import ToolNotFoundError, which_tool
+
+    try:
+        exe = which_tool("velest")
+    except ToolNotFoundError:
+        pytest.skip("velest executable not found")
+    ctrl = write_synthetic_dataset(tmp_path)
+    ctrl.vthet = 1e8
+    write_control(tmp_path / "velest.cmn", ctrl)
+    proc = subprocess.run(
+        [str(exe)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        stdin=subprocess.DEVNULL,
+    )
+    assert proc.returncode == 0, proc.stdout[-500:] + proc.stderr[-500:]
+    assert "Bad real number" not in proc.stdout + proc.stderr
+    assert len(read_cnv(tmp_path / "velout.cnv", allow_negative_tt=True).events) == ctrl.neqs
