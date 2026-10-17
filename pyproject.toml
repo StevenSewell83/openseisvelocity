@@ -40,6 +40,7 @@ packages = ["src/osv"]
 testpaths = ["tests"]
 tmp_path_retention_count = 1
 tmp_path_retention_policy = "failed"
+addopts = "--import-mode=importlib"
 markers = [
     "integration: needs built binaries or external data; skipped when unavailable",
 ]

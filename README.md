@@ -15,4 +15,4 @@ osv doctor
 No conda? The installer downloads micromamba locally (no sudo). Machines with gfortran and
 CMake can use `./install.sh --venv`. Options (`--prefix`, `--env-name`, `--no-gmt`,
 `--system-compilers`, `--jobs`, `--dev`, `--dry-run`, ...) and troubleshooting are in
-[docs/install.md](docs/install.md).
+[docs/install.md](docs/install.md). Docker and Apptainer images: [docs/containers.md](docs/containers.md).

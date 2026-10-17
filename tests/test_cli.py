@@ -42,6 +42,7 @@ def test_version_flag_and_command() -> None:
             "velest-mc",
             "velest-analyse",
             "doctor",
+            "build-model",
         )
     ],
 )

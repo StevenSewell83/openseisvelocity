@@ -71,6 +71,8 @@ Using the tools without activating the environment: `osv` finds executables in
 `$OSV_TOOLS_DIR`, `$CONDA_PREFIX/bin/osv-tools`, `<sys.prefix>/bin/osv-tools` (venvs and
 `<env>/bin/osv`), the repo's `build/bin`, and finally `PATH`.
 
+Docker and Apptainer images are described in [containers.md](containers.md).
+
 ## Troubleshooting
 
 **No conda.** Nothing to do: the installer bootstraps micromamba. To use your own, put it
@@ -81,7 +83,7 @@ micro.mamba.pm, use `--venv`.
 them). For offline machines: download the micromamba tarball elsewhere and point
 `OSV_MICROMAMBA_URL` at a `file:///path/to/tarball` URL or a local mirror, mirror conda-forge
 and set `CONDA_CHANNELS`/`.condarc`, or build a Docker/Apptainer image on a connected
-machine (see the repository's container definitions).
+machine (see [containers.md](containers.md)).
 
 **Not enough disk space.** The conda package cache and the environment together need about
 6 GB. Use `--prefix` on a larger disk, set `CONDA_PKGS_DIRS` to a larger disk, or run

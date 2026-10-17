@@ -1,0 +1,49 @@
+Bootstrap: docker
+From: python:3.11-slim-bookworm
+
+# Self-contained definition (does not need the Docker image). Build from the repo root:
+#   apptainer build osv.sif apptainer.def
+# Or convert a Docker image instead:  apptainer build osv.sif docker-daemon://osv:latest
+# See docs/containers.md.
+
+%files
+    scripts/build_fortran.sh /src/scripts/build_fortran.sh
+    fortran /src/fortran
+    pyproject.toml /src/pyproject.toml
+    README.md /src/README.md
+    src /src/src
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends gfortran cmake make libgomp1
+    cd /src
+    scripts/build_fortran.sh --prefix /opt/osv --build-dir /tmp/fbuild --jobs "$(nproc)"
+    rm -rf /tmp/fbuild
+    python -m venv /opt/venv
+    PIP_NO_CACHE_DIR=1 /opt/venv/bin/pip install .
+    # keep libgfortran, drop the compilers
+    apt-get install -y --no-install-recommends libgfortran5
+    apt-get purge -y gfortran cmake make
+    apt-get autoremove -y
+    apt-get clean
+    rm -rf /var/lib/apt/lists/* /src
+
+%environment
+    export PATH=/opt/venv/bin:$PATH
+    export OSV_TOOLS_DIR=/opt/osv/bin/osv-tools
+    export MPLBACKEND=Agg
+    export MPLCONFIGDIR=${TMPDIR:-/tmp}/matplotlib-$(id -u)
+
+%runscript
+    exec osv "$@"
+
+%test
+    osv doctor --quick
+
+%labels
+    Description openSeisVelocity (VELEST + FMTOMO workflow)
+
+%help
+    apptainer run osv.sif doctor --quick
+    apptainer run --bind /data/project:/work osv.sif doctor --config /work/config.yaml
