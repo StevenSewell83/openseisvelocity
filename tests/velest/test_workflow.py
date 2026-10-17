@@ -26,6 +26,7 @@ from osv.velest.workflow import (
     iterate_final_model,
     perturb_model,
     resolve_stages,
+    resolve_vdamp,
     resolve_vpvs,
     run_mc_workflow,
     select_seeds,
@@ -454,3 +455,51 @@ def test_real_two_stage_and_iterate(tmp_path):
     assert out.history["model_change_km_s"].iloc[-1] < out.history["model_change_km_s"].iloc[0]
     vp = out[-1].final_model.p.layers["vel"]
     assert vp.min() > 1.0 and vp.iloc[-1] > 5.0  # no collapse towards ~3 km/s
+
+
+# --- vdamp ----------------------------------------------------------------------------------
+
+
+def test_resolve_vdamp_number_list_auto():
+    cfg = _cfg(layers_top_km=[-0.6, 0.2, 0.7, 1.2], vp_bounds=[(1, 2)] * 4)
+    assert list(resolve_vdamp(cfg)) == [1.0] * 4
+    assert list(resolve_vdamp(_cfg(layers_top_km=[0, 1], vp_bounds=[(1, 2)] * 2, vdamp=5))) == [
+        5.0, 5.0,
+    ]  # fmt: skip
+    lst = _cfg(layers_top_km=[0, 1], vp_bounds=[(1, 2)] * 2, vdamp=[20, 1])
+    assert list(resolve_vdamp(lst)) == [20.0, 1.0]
+    auto = _cfg(layers_top_km=[-0.6, 0.2, 0.7, 1.2], vp_bounds=[(1, 2)] * 4, vdamp="auto")
+    assert list(resolve_vdamp(auto)) == [1.0] * 4  # no geometry: nothing to damp
+    # station depths -0.59..+0.16 km: only the layer starting at -0.6 is above the deepest one
+    # (0.2 > 0.16); deepest event at 0.9 km: the layer starting at 1.2 is below it
+    v = resolve_vdamp(auto, station_z_km=[-0.59, 0.16], event_depth_km=[0.5, 0.9])
+    assert list(v) == [10.0, 1.0, 1.0, 3.0]
+    auto.vdamp_auto.near_surface, auto.vdamp_auto.below_events = 50.0, 1.0
+    assert list(resolve_vdamp(auto, station_z_km=[0.3], event_depth_km=[9.0])) == [50.0, 50.0, 1, 1]
+
+
+def test_stage_swtfac_overrides_control():
+    base = VelestControl(neqs=2, phasefile="a", stationfile="b", nsp=3, swtfac=0.75)
+    st = resolve_stages(_cfg(stages=[DampingStage(name="s"), DampingStage(name="p", swtfac=0.01)]))
+    assert _stage_control(base, st[0], False).swtfac == 0.75
+    assert _stage_control(base, st[1], False).swtfac == 0.01
+
+
+def _vdamp_of(path: Path) -> list[float]:
+    return list(read_model(path, nmod=2).p.layers["vdamp"])
+
+
+def test_vdamp_reaches_every_stage_and_iterate(dummy, inputs, tmp_path):
+    cfg = _cfg(n_models=2)
+    models = generate_trial_models(cfg, 1)
+    vd = [30.0] + [1.0] * (models[0].n_layers - 1)
+    run_mc_workflow(models, inputs, cfg, tmp_path / "wf", n_jobs=1, vdamp=vd)
+    for stage in ("stage1", "stage2"):
+        assert _vdamp_of(tmp_path / "wf" / stage / models[0].id / "model.mod") == vd
+    cfg.iterate_until.max_cycles = 2
+    iterate_final_model(models[0], inputs, cfg, tmp_path / "it", vdamp=vd)
+    assert _vdamp_of(tmp_path / "it/iterate/cycle01/model.mod") == vd
+    assert _vdamp_of(tmp_path / "it/iterate/cycle02/model.mod") == vd
+    # default: vdamp 1 everywhere
+    run_mc_workflow(models, inputs, cfg, tmp_path / "wf1", n_jobs=1)
+    assert set(_vdamp_of(tmp_path / "wf1/stage2" / models[0].id / "model.mod")) == {1.0}

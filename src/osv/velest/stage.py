@@ -46,10 +46,16 @@ import numpy as np
 import pandas as pd
 
 from osv.data.stage import load_velest_control
-from osv.io.velest import ModelBlock, VelestModel
+from osv.io.velest import ModelBlock, VelestModel, read_stations
 from osv.report.checks import QCFinding
 from osv.stages import Stage, StageContext, register
-from osv.velest.ensemble import EnsembleResult, Finding, analyse_ensemble, write_ensemble
+from osv.velest.ensemble import (
+    EnsembleResult,
+    Finding,
+    analyse_ensemble,
+    with_final_model,
+    write_ensemble,
+)
 from osv.velest.models import (
     TrialModel,
     generate_trial_models,
@@ -65,7 +71,12 @@ from osv.velest.stability import (
     write_stability,
 )
 from osv.velest.vpvs import vpvs_grid_search
-from osv.velest.workflow import iterate_final_model, resolve_vpvs, run_mc_workflow
+from osv.velest.workflow import (
+    iterate_final_model,
+    resolve_vdamp,
+    resolve_vpvs,
+    run_mc_workflow,
+)
 
 #: Directory (in the ``velest_mc`` stage) holding one directory per VELEST run.
 RUNS_DIR = "runs"
@@ -99,6 +110,20 @@ def _control_with_ratio(cfg: Any, prep_dir: Path) -> tuple[Any, float | None]:
     if cfg.velest.vpvs.mode == "fixed":
         ctrl.vpvs = round(resolve_vpvs(cfg, prep_dir), 3)
     return ctrl, float(ctrl.vpvs)
+
+
+def _stage_vdamp(cfg: Any, prep_dir: Path) -> np.ndarray:
+    """Per-layer ``vdamp`` for the config (``"auto"`` uses the station and event depths)."""
+    v = cfg.velest
+    if not isinstance(v.vdamp, str):
+        return resolve_vdamp(v)
+    sta = read_stations(prep_dir / "velest" / "stations.sta")
+    em = pd.read_csv(prep_dir / "velest" / "event_map.csv")
+    return resolve_vdamp(
+        v,
+        station_z_km=(-sta["elev_m"].to_numpy(float) / 1000.0),
+        event_depth_km=em["depth_km"].to_numpy(float),
+    )
 
 
 def _runs_to_parquet(runs: pd.DataFrame, stage_dir: Path) -> pd.DataFrame:
@@ -157,8 +182,8 @@ def _trial_models_frame(mc_dir: Path) -> pd.DataFrame:
     return pd.read_parquet(mc_dir / "trial_models.parquet")
 
 
-def _velest_model(fm: pd.DataFrame, col: str = "vp") -> VelestModel:
-    lay = pd.DataFrame({"vel": fm[col].round(2), "depth": fm["depth_top"], "vdamp": 1.0})
+def _velest_model(fm: pd.DataFrame, col: str = "vp", vdamp: Any = 1.0) -> VelestModel:
+    lay = pd.DataFrame({"vel": fm[col].round(2), "depth": fm["depth_top"], "vdamp": vdamp})
     return VelestModel("osv final", ModelBlock(lay, label="P final"))
 
 
@@ -280,6 +305,8 @@ class VelestMCStage(Stage):
         ctx.logger.info("running %d trial models (n_jobs=%d)", len(models), ctx.n_jobs)
         models_to_frame(models).to_parquet(ctx.path("trial_models.parquet"), index=False)
 
+        vdamp = _stage_vdamp(cfg, prep.dir)
+        ctx.logger.info("layer vdamp: %s", [round(float(x), 3) for x in vdamp])
         root = ctx.stage_dir / RUNS_DIR
         shutil.rmtree(root, ignore_errors=True)  # a stage re-run starts from scratch
         res = run_mc_workflow(
@@ -290,6 +317,7 @@ class VelestMCStage(Stage):
             n_jobs=ctx.n_jobs,
             seed=seed,
             compact=cfg.velest.compact_runs,
+            vdamp=vdamp,
         )
         runs = _runs_to_parquet(res.runs, ctx.stage_dir)
         runs.to_parquet(ctx.path("runs.parquet"), index=False)
@@ -307,6 +335,7 @@ class VelestMCStage(Stage):
             "rms_min": float(rms.min()) if len(rms) else None,
             "rms_max": float(rms.max()) if len(rms) else None,
             "vpvs": ratio,
+            "vdamp": [float(x) for x in vdamp],
             "stages": res.stages,
             "wall_time_s": round(wall, 1),
         }
@@ -336,6 +365,7 @@ class VelestMCStage(Stage):
                     [round(info["rms_min"], 4), round(info["rms_max"], 4)] if len(rms) else None
                 ),
                 "damping_stages": res.stages,
+                "vdamp": [round(float(x), 3) for x in vdamp],
                 "vpvs": ratio,
                 "wall_time_s": info["wall_time_s"],
             }
@@ -397,6 +427,7 @@ class VelestAnalyseStage(Stage):
         runs = load_run_table(mc.dir)
         trial = _trial_models_frame(mc.dir)
         history = pd.read_csv(mc.dir / "workflow_history.csv")
+        vd = _stage_vdamp(cfg, prep.dir)
         ens = _analyse(ctx, runs, trial, prep.dir)
         ctx.logger.info(
             "ensemble: %d runs, %d eligible, %d selected, closest %s",
@@ -415,22 +446,27 @@ class VelestAnalyseStage(Stage):
         inputs = _inputs(prep.dir, fctrl)
 
         out = ctx.stage_dir
-        for sub in ("final", "stability_runs", "vpvs_grid"):
+        for sub in ("final0", "final", "stability_runs", "vpvs_grid"):
             shutil.rmtree(out / sub, ignore_errors=True)
-        write_ensemble(ens, out)
+        timeout = 3600.0
+        policy_info: dict[str, Any] = {"policy": vcfg.select.final_model}
+        if vcfg.select.final_model == "iterated":
+            ens, policy_info = self._iterated_final_model(
+                ctx, ens, inputs, fctrl, fratio, vd, out / "final0", timeout
+            )
+        write_ensemble(ens, out, vdamp=vd)
         (out / "station_delays.csv").replace(out / "station_delays_ensemble.csv")
 
         # ---- fixed-model run (canonical delays and hypocentres) and stability tests
-        timeout = 3600.0
         if vcfg.stability.enabled:
             stab = run_stability(
                 ens, inputs, cfg, out / "stability_runs", seed=seed, control=fctrl,
-                n_jobs=ctx.n_jobs, timeout=timeout,
+                n_jobs=ctx.n_jobs, timeout=timeout, vdamp=vd,
             )  # fmt: skip
         else:
             fixed0 = fixed_model_run(
                 ens, inputs, fctrl, out / "stability_runs" / "fixed_model",
-                cfg=vcfg.stability, timeout=timeout,
+                cfg=vcfg.stability, timeout=timeout, vdamp=vd,
             )  # fmt: skip
             if not fixed0.ok:
                 raise RuntimeError(
@@ -459,7 +495,7 @@ class VelestAnalyseStage(Stage):
                 start, inputs, cfg, out / "final", n_jobs=1,
                 cnv_path=fixed.cnv_path,
                 corrections=fixed.station_delays if len(fixed.station_delays) else None,
-                vpvs=fratio, timeout=timeout,
+                vpvs=fratio, timeout=timeout, vdamp=vd,
             )  # fmt: skip
             iter_hist = it.history
             iter_info = {"converged": bool(it.converged), "n_cycles": len(iter_hist)}
@@ -472,9 +508,11 @@ class VelestAnalyseStage(Stage):
                         Finding(
                             "iterate_model_drift",
                             "warn",
-                            f"repeating VELEST on the final model moved a layer's Vp by "
-                            f"{drift:.2f} km/s (limit {vcfg.iterate_until.drift_warn_km_s:g}); "
-                            "the model is not at a fixed point of the inversion.",
+                            f"the final model is not a fixed point of VELEST: repeating the "
+                            f"inversion (delays held) moved a layer's Vp by {drift:.2f} km/s "
+                            f"(limit {vcfg.iterate_until.drift_warn_km_s:g}); use "
+                            "velest.select.final_model: iterated, damp the poorly resolved "
+                            "layers (velest.vdamp) or reduce the number of layers.",
                             data={"max_vp_drift_km_s": drift},
                         )
                     )
@@ -493,7 +531,7 @@ class VelestAnalyseStage(Stage):
         grid: pd.DataFrame | None = None
         if vcfg.vpvs_grid.enabled and fctrl.nsp == 3:
             grid = vpvs_grid_search(
-                _velest_model(ens.final_model), inputs, out / "vpvs_grid",
+                _velest_model(ens.final_model, vdamp=vd), inputs, out / "vpvs_grid",
                 grid=vcfg.vpvs_grid.values, n_jobs=ctx.n_jobs, timeout=timeout,
             )  # fmt: skip
             grid.to_csv(out / "vpvs_grid.csv", index=False)
@@ -525,6 +563,8 @@ class VelestAnalyseStage(Stage):
         summary.update(
             vpvs=fratio,
             final_model_rms=_f(fixed.rms),
+            final_model_policy=policy_info,
+            vdamp=[float(x) for x in vd],
             n_hypocentres=len(hyp),
             iterate=iter_info,
             stability=stab.to_json(),
@@ -547,6 +587,59 @@ class VelestAnalyseStage(Stage):
         self.plot(ctx)
 
     @staticmethod
+    def _iterated_final_model(
+        ctx: StageContext,
+        ens: EnsembleResult,
+        inputs: SimpleNamespace,
+        fctrl: Any,
+        fratio: float | None,
+        vd: np.ndarray,
+        root: Path,
+        timeout: float,
+    ) -> tuple[EnsembleResult, dict[str, Any]]:
+        """``select.final_model = iterated``: iterate the statistic model to a fixed point.
+
+        A fixed-model run gives delays and hypocentres consistent with the statistic model
+        (:func:`~osv.velest.stability.fixed_model_run`), then VELEST is repeated from its own
+        outputs with the delays held (``iterate_until``).  The last cycle's model is used when
+        the loop converged, else the lowest-RMS cycle's.  The ensemble's p05-p95 uncertainty is
+        kept.
+        """
+        cfg = ctx.config
+        fm = ens.final_model
+        fixed0 = fixed_model_run(
+            ens, inputs, fctrl, root / "fixed", cfg=cfg.velest.stability, timeout=timeout,
+            vdamp=vd,
+        )  # fmt: skip
+        if not fixed0.ok:
+            raise RuntimeError(f"fixed-model run failed ({fixed0.status}); see {fixed0.run_dir}")
+        start = TrialModel(
+            "median", fm["depth_top"].to_numpy(float), fm["vp"].to_numpy(float),
+            fm["vs"].to_numpy(float), "ensemble", cfg.project.random_seed,
+        )  # fmt: skip
+        it = iterate_final_model(
+            start, inputs, cfg, root, n_jobs=1, cnv_path=fixed0.cnv_path,
+            corrections=fixed0.station_delays if len(fixed0.station_delays) else None,
+            vpvs=fratio, timeout=timeout, vdamp=vd,
+        )  # fmt: skip
+        info: dict[str, Any] = {
+            "policy": "iterated",
+            "converged": bool(it.converged),
+            "n_cycles": len(it.history),
+        }
+        if not len(it):
+            ctx.logger.warning("iterate to a fixed point failed; keeping the statistic model")
+            return ens, {**info, "used": "median"}
+        k = len(it) if it.converged else (it.best_cycle or len(it))
+        model = it[k - 1].final_model
+        vp = model.p.layers["vel"].to_numpy(float)
+        vs = model.s.layers["vel"].to_numpy(float) if model.s is not None else None
+        shift = float(np.max(np.abs(vp - fm["vp"].to_numpy(float))))
+        info.update(used_cycle=k, max_vp_shift_from_median_km_s=round(shift, 3))
+        ctx.logger.info("iterated final model: cycle %d, moved %.2f km/s from the median", k, shift)
+        return with_final_model(ens, vp, vs), info
+
+    @staticmethod
     def _headline(
         ctx: StageContext,
         ens: EnsembleResult,
@@ -558,6 +651,9 @@ class VelestAnalyseStage(Stage):
     ) -> None:
         s = ctx.summary
         s["final_model_vp"] = _fmt_model(ens.final_model)
+        s["final_model_policy"] = ens.final_model_policy
+        s["top_layer_vp_km_s"] = round(float(ens.final_model["vp"].iloc[0]), 3)
+        s["runs_diverged"] = f"{int(ens.runs['diverged'].sum())} of {len(ens.runs)} runs"
         s["vpvs"] = fratio
         s["final_model_rms_s"] = round(float(fixed.rms), 4)
         s["ensemble_rms_range_s"] = [round(float(v), 4) for v in ens.rms_range]
@@ -591,6 +687,10 @@ class VelestAnalyseStage(Stage):
             runs = load_run_table(mc.dir)
             history = pd.read_csv(mc.dir / "workflow_history.csv")
             ens = _analyse(ctx, runs, _trial_models_frame(mc.dir), prep.dir)
+            fm_csv = ctx.stage_dir / "final_model.csv"
+            if ens.final_model_policy == "iterated" and fm_csv.exists():
+                saved = pd.read_csv(fm_csv)  # the iterated model written by run()
+                ens = with_final_model(ens, saved["vp"].to_numpy(), saved["vs"].to_numpy())
             stab = load_stability(
                 ctx.stage_dir / "stability",
                 ctx.stage_dir / "stability_runs" / "fixed_model" / "fixed",

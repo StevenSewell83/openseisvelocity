@@ -434,3 +434,122 @@ def test_stopped_early_finding(dummy, inputs, cfg, tmp_path, monkeypatch):
     )
     f = [x for x in res.warnings if x.code == "stability_runs_stopped_early"]
     assert len(f) == 1 and f[0].data["ids"] == ["ref_AAA"]
+
+
+# --- consistent station delays with nsp = 3 (osv-iu9.10) -------------------------------------
+
+
+@pytest.fixture
+def inputs3(inputs):
+    inputs.control.nsp, inputs.control.nmod, inputs.control.vpvs = 3, 1, 1.75
+    inputs.control.swtfac = 0.75
+    return inputs
+
+
+def test_delay_swtfac_config_default():
+    assert VelestConfig().stability.delay_swtfac == 0.01
+
+
+def test_p_weighted_only_for_nsp3():
+    from osv.config.schema import StabilityConfig
+
+    cfg = StabilityConfig()
+    c2 = VelestControl(nsp=2, swtfac=0.75)
+    assert st._p_weighted(c2, cfg).swtfac == 0.75
+    c3 = VelestControl(nsp=3, swtfac=0.75)
+    assert st._p_weighted(c3, cfg).swtfac == 0.01 and c3.swtfac == 0.75
+    assert st._p_weighted(c3, StabilityConfig(delay_swtfac=None)).swtfac == 0.75
+
+
+def _writes_cnv(tmp_path):
+    exe = tmp_path / "bin" / "velest"
+    exe.write_text(DUMMY.replace("exit 0", "cp events.cnv velout.cnv\nexit 0"))
+
+
+def test_fixed_model_run_two_steps_for_nsp3(dummy, inputs3, tmp_path):
+    _writes_cnv(tmp_path)
+    fx = st.fixed_model_run(MODEL, inputs3, None, tmp_path / "fx")
+    assert fx.ok and fx.run_id == "fixed" and fx.run_dir == tmp_path / "fx" / "fixed"
+    s1 = read_control(tmp_path / "fx/fixed_delays/velest.cmn")
+    s2 = read_control(fx.run_dir / "velest.cmn")
+    # step 1: P-driven delay inversion; step 2: full S weight, delays handed on and held
+    assert (s1.swtfac, s1.nsinv, s1.iusestacorr) == (0.01, 1, 0)
+    assert (s2.swtfac, s2.nsinv, s2.iusestacorr) == (0.75, 0, 1)
+    assert s1.vthet == s2.vthet == 1e5
+    assert inputs3.control.swtfac == 0.75 and inputs3.control.nsinv == 1  # caller untouched
+    # step 2 starts from step 1's hypocentres (velout.cnv) and delays
+    assert (fx.run_dir / "events.cnv").read_bytes() == (
+        tmp_path / "fx/fixed_delays/velout.cnv"
+    ).read_bytes()
+    sta2 = read_stations(fx.run_dir / "stations.sta")
+    assert np.allclose(sta2["ptcor"], [DELAY[s] - DELAY["DDD"] for s in STAS], atol=0.006)
+    assert list(fx.station_delays["sta"]) == STAS
+
+
+def test_fixed_model_run_single_step_otherwise(dummy, inputs3, tmp_path):
+    from osv.config.schema import StabilityConfig
+
+    inputs3.control.nsp, inputs3.control.nmod = 2, 2
+    fx = st.fixed_model_run(MODEL, inputs3, None, tmp_path / "nsp2")
+    assert fx.ok and not (tmp_path / "nsp2/fixed_delays").exists()
+    inputs3.control.nsp, inputs3.control.nmod = 3, 1
+
+    fx = st.fixed_model_run(
+        MODEL, inputs3, None, tmp_path / "off", cfg=StabilityConfig(delay_swtfac=None)
+    )
+    assert fx.ok and not (tmp_path / "off/fixed_delays").exists()
+    assert read_control(fx.run_dir / "velest.cmn").nsinv == 1
+
+
+def test_fixed_model_run_delay_step_failure(dummy, inputs3, tmp_path, monkeypatch):
+    def broken(path, **kw):
+        raise RuntimeError("cannot parse")
+
+    monkeypatch.setattr("osv.io.velest_out.read_run_dir", broken)
+    fx = st.fixed_model_run(MODEL, inputs3, None, tmp_path / "fx")
+    assert not fx.ok and not (tmp_path / "fx/fixed").exists()
+
+
+def test_vdamp_in_stability_model_files(dummy, inputs, cfg, tmp_path):
+    vd = [30.0, 1.0, 1.0, 3.0]
+    p = st._write_model_file(MODEL, tmp_path / "m.mod", vd)
+    assert list(read_model(p, nmod=2).p.layers["vdamp"]) == vd
+    fx = st.fixed_model_run(MODEL, inputs, None, tmp_path / "fx", vdamp=vd)
+    assert list(read_model(fx.run_dir / "model.mod", nmod=2).p.layers["vdamp"]) == vd
+    res = st.hypocentre_perturbation_test(
+        MODEL, inputs, None, cfg, tmp_path / "h", seed=1, n_tests=1, vdamp=vd
+    )
+    assert res.runs["status"].eq("ok").all()
+    free = tmp_path / "h/hypo_free_000/model.mod"
+    assert list(read_model(free, nmod=2).p.layers["vdamp"]) == vd
+
+
+def test_hypocentre_and_lvz_tests_hold_reference_delays_for_nsp3(dummy, inputs3, cfg, tmp_path):
+    ref = st.fixed_model_run(MODEL, inputs3, None, tmp_path / "ref")
+    res = st.hypocentre_perturbation_test(
+        MODEL, inputs3, None, cfg, tmp_path / "h", seed=1, n_tests=1, reference=ref
+    )
+    assert res.runs["status"].eq("ok").all()
+    for rid in ("hypo_base_free", "hypo_free_000", "hypo_fixed_000"):
+        c = read_control(tmp_path / "h" / rid / "velest.cmn")
+        assert (c.nsinv, c.iusestacorr, c.swtfac) == (0, 1, 0.75)
+        sta = read_stations(tmp_path / "h" / rid / "stations.sta")
+        assert np.allclose(sta["ptcor"], ref.station_delays["ptcor"].to_numpy())
+    lv = st.lvz_test(MODEL, inputs3, None, cfg, tmp_path / "l", reference=ref)
+    assert lv.runs["status"].eq("ok").all()
+    c = read_control(tmp_path / "l/lvz_final_0/velest.cmn")
+    assert (c.nsinv, c.iusestacorr) == (0, 1)
+    # without a reference (or for nsp = 2) delays are inverted as before
+    lv0 = st.lvz_test(MODEL, inputs3, None, cfg, tmp_path / "l0")
+    assert read_control(tmp_path / "l0/lvz_final_0/velest.cmn").nsinv == 1
+    assert lv0.runs["status"].eq("ok").all()
+
+
+def test_reference_test_uses_p_weighted_control_for_nsp3(dummy, inputs3, cfg, tmp_path):
+    res = st.reference_station_test(
+        MODEL, inputs3, None, cfg, tmp_path / "r", reference_stations=["AAA"]
+    )
+    assert res.runs["status"].eq("ok").all()
+    for rid in ("ref_baseline", "ref_AAA"):
+        c = read_control(tmp_path / "r" / rid / "velest.cmn")
+        assert (c.swtfac, c.nsinv) == (0.01, 1)

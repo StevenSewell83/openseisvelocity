@@ -14,6 +14,12 @@ is the per-layer ``median`` or ``mean`` of the selected final models (``best``: 
 lowest-RMS model).  The uncertainty columns are the standard deviation and the 5th/95th
 percentiles over the selected set.
 
+``select.final_model`` chooses what the final model is: ``median`` (the statistic above),
+``best`` (the lowest-RMS run), ``closest`` (the selected run nearest the statistic model: a
+model VELEST actually produced) or ``iterated`` (the statistic model, replaced by the stage
+with its fixed point, see :func:`with_final_model`).  The uncertainty columns always describe
+the selected ensemble.
+
 A per-layer median is not itself a tested model.  ``closest_run_id`` names the selected run
 whose final Vp model is nearest (L2) to the final model, with its RMS; **re-running VELEST with
 the final model fixed** (task 3.5) gives station delays and hypocentres consistent with it.
@@ -31,7 +37,7 @@ import json
 import logging
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +54,8 @@ __all__ = [
     "Finding",
     "QCThresholds",
     "analyse_ensemble",
+    "final_model_checks",
+    "with_final_model",
     "write_ensemble",
 ]
 
@@ -72,6 +80,9 @@ class QCThresholds:
     delay_spread_warn: float = 0.2  # s, std of a station delay over the selected runs
     reference_delay_tol: float = 0.005  # s (files hold two decimals)
     max_rms_ratio: float = 0.9  # median final/initial RMS above this warns
+    vp_floor_km_s: float = 1.5  # physical floor of a rock Vp (km/s)
+    out_of_bounds_fraction: float = 0.1  # of the sampled range, beyond lo/hi
+    max_divergence_rate: float = 0.2  # share of diverged runs above this warns
 
 
 @dataclass
@@ -126,6 +137,8 @@ class EnsembleResult:
     convergence_rate: float
     rms_range: tuple[float, float]
     reference_station: str | None = None
+    final_model_policy: str = "median"
+    vp_bounds: np.ndarray | None = None
 
     @property
     def warnings(self) -> list[Finding]:
@@ -139,6 +152,7 @@ class EnsembleResult:
                 "n_eligible": len(self.eligible_ids),
                 "n_selected": len(self.selected_ids),
                 "select": self.select.model_dump(),
+                "final_model_policy": self.final_model_policy,
                 "convergence_rate": self.convergence_rate,
                 "n_failed": int(self.runs["failed"].sum() + (self.runs["status"] != "ok").sum()),
                 "rms_range": list(self.rms_range),
@@ -503,6 +517,12 @@ def analyse_ensemble(
     how = select_cfg.statistic
     fvp = _stat(vp, how)
     fvs = _stat(vs, how) if has_s else np.full(vp.shape[1], np.nan)
+    stat_vp = fvp
+    policy = select_cfg.final_model
+    if policy in ("best", "closest"):
+        row = 0 if policy == "best" else int(np.argmin(np.sqrt(np.nansum((vp - fvp) ** 2, axis=1))))
+        fvp = vp[row]
+        fvs = vs[row] if has_s else fvs
 
     def spread(a: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         if not np.isfinite(a).any():
@@ -540,8 +560,8 @@ def analyse_ensemble(
         }
     )
 
-    # closest run to the final model (L2 in Vp); the best run is selected_ids[0]
-    d = np.sqrt(np.nansum((vp - fvp) ** 2, axis=1))
+    # closest run to the statistic model (L2 in Vp); the best run is selected_ids[0]
+    d = np.sqrt(np.nansum((vp - stat_vp) ** 2, axis=1))
     closest = selected_ids[int(np.argmin(d))]
     rms_of = runs.set_index("id")["final_rms"]
 
@@ -566,9 +586,12 @@ def analyse_ensemble(
         convergence_rate=float(runs["converged"].mean()),
         rms_range=(float(elig["final_rms"].min()), float(elig["final_rms"].max())),
         reference_station=reference_station,
+        final_model_policy=policy,
     )
     bounds = _bounds(vp_bounds, trial, vp.shape[1])
+    res.vp_bounds = bounds
     res.findings = _qc(res, fm, vp, bounds, sel_delays, runs, th)
+    res.findings += final_model_checks(res, th)
     for f in res.findings:
         if f.severity != "info":
             logger.warning("ensemble QC %s: %s", f.code, f.message)
@@ -616,6 +639,118 @@ def _station_summary(sel: pd.DataFrame, allr: pd.DataFrame, closest: str) -> pd.
 # ----------------------------------------------------------------------------------------
 # QC
 # ----------------------------------------------------------------------------------------
+
+
+def _lvz_findings(v: np.ndarray, th: QCThresholds) -> list[Finding]:
+    out = []
+    for i in range(1, len(v)):
+        drop = v[i - 1] - v[i]
+        if drop > 1e-9:
+            out.append(
+                Finding(
+                    "lvz",
+                    "warn" if drop > th.lvz_warn_dv else "info",
+                    f"low-velocity zone: layer {i} ({v[i]:.2f} km/s) is {drop:.2f} km/s slower "
+                    f"than layer {i - 1}",
+                    layer=i,
+                    data={"drop": float(drop)},
+                )
+            )
+    return out
+
+
+def final_model_checks(res: EnsembleResult, th: QCThresholds | None = None) -> list[Finding]:
+    """QC findings about the *final model itself* (not the selected runs).
+
+    * ``vp_below_floor`` (warn): a layer's Vp is below ``th.vp_floor_km_s`` (1.5 km/s): not a
+      physical rock velocity, usually a near-surface layer trading off with the station delays.
+    * ``final_out_of_bounds`` (warn): a layer's Vp is outside the sampled ``vp_bounds`` by more
+      than ``th.out_of_bounds_fraction`` of the layer's range, i.e. the inversion left the
+      region the trial models covered.
+    * ``divergence_rate`` (warn): more than ``th.max_divergence_rate`` of the runs diverged
+      (final RMS above the RMS of the run's own start).
+    """
+    th = th or QCThresholds()
+    out: list[Finding] = []
+    vp = res.final_model["vp"].to_numpy(float)
+    for i in np.flatnonzero(vp < th.vp_floor_km_s):
+        out.append(
+            Finding(
+                "vp_below_floor",
+                "warn",
+                f"layer {int(i)}: final Vp {vp[i]:.2f} km/s is below the physical floor "
+                f"{th.vp_floor_km_s:g} km/s; the layer is not resolved against the station "
+                "delays (damp it with velest.vdamp or merge it)",
+                layer=int(i),
+                data={"vp": float(vp[i]), "floor": th.vp_floor_km_s},
+            )
+        )
+    b = res.vp_bounds
+    if b is not None and len(b) == len(vp):
+        for i, (lo, hi) in enumerate(b):
+            tol = th.out_of_bounds_fraction * (hi - lo)
+            if vp[i] < lo - tol or vp[i] > hi + tol:
+                side, edge = ("lower", lo) if vp[i] < lo else ("upper", hi)
+                out.append(
+                    Finding(
+                        "final_out_of_bounds",
+                        "warn",
+                        f"layer {i}: final Vp {vp[i]:.2f} km/s is more than "
+                        f"{th.out_of_bounds_fraction:.0%} of the sampled range beyond the "
+                        f"{side} bound ({edge:.2f} km/s); the inversion left the region the "
+                        "trial models covered",
+                        layer=i,
+                        data={"vp": float(vp[i]), "side": side, "bound": float(edge)},
+                    )
+                )
+    n = len(res.runs)
+    ndiv = int(res.runs["diverged"].sum())
+    rate = ndiv / n if n else 0.0
+    if rate > th.max_divergence_rate:
+        out.append(
+            Finding(
+                "divergence_rate",
+                "warn",
+                f"{ndiv} of {n} runs ({rate:.0%}) diverged (> {th.max_divergence_rate:.0%}): "
+                "the final RMS of a run is higher than that of its start; check the delay "
+                "handling (velest.stability.delay_swtfac), the damping and the near-surface "
+                "layer",
+                data={"rate": rate, "diverged": ndiv, "n": n},
+            )
+        )
+    return out
+
+
+def with_final_model(
+    res: EnsembleResult,
+    vp: Sequence[float],
+    vs: Sequence[float] | None = None,
+    *,
+    policy: str = "iterated",
+    thresholds: QCThresholds | None = None,
+) -> EnsembleResult:
+    """Copy of ``res`` whose final model has the velocities ``vp`` (and ``vs``).
+
+    Used for ``select.final_model = "iterated"``: the stage iterates the statistic model with
+    VELEST and substitutes the fixed point.  The uncertainty columns (std, p05, p95) stay those
+    of the selected ensemble; ``vs`` defaults to ``vp / vpvs`` with the model's own ratio.  The
+    low-velocity-zone and final-model findings are recomputed for the new model.
+    """
+    th = thresholds or QCThresholds()
+    fm = res.final_model.copy()
+    new_vp = np.asarray(vp, dtype=float)
+    if len(new_vp) != len(fm):
+        raise EnsembleError(f"final model has {len(fm)} layers but {len(new_vp)} velocities given")
+    ratio = fm["vpvs"].to_numpy(float)
+    new_vs = np.asarray(vs, dtype=float) if vs is not None else new_vp / ratio
+    fm["vp"], fm["vs"], fm["vpvs"] = new_vp, new_vs, new_vp / new_vs
+    keep = [f for f in res.findings if f.code not in {"lvz", *_FINAL_CODES}]
+    out = replace(res, final_model=fm, final_model_policy=policy)
+    out.findings = [*keep, *_lvz_findings(new_vp, th), *final_model_checks(out, th)]
+    return out
+
+
+_FINAL_CODES = ("vp_below_floor", "final_out_of_bounds", "divergence_rate")
 
 
 def _qc(
@@ -703,19 +838,7 @@ def _qc(
                 data={"hits": h},
             )
 
-    # low-velocity zones in the final model
-    v = res.final_model["vp"].to_numpy()
-    for i in range(1, nl):
-        drop = v[i - 1] - v[i]
-        if drop > 1e-9:
-            add(
-                "lvz",
-                "warn" if drop > th.lvz_warn_dv else "info",
-                f"low-velocity zone: layer {i} ({v[i]:.2f} km/s) is {drop:.2f} km/s slower than "
-                f"layer {i - 1}",
-                layer=i,
-                data={"drop": float(drop)},
-            )
+    out += _lvz_findings(res.final_model["vp"].to_numpy(), th)
 
     # RMS improvement
     sel = runs[runs["selected"]]
@@ -793,13 +916,13 @@ def write_ensemble(
             blocks.append(None)
             continue
         lay = pd.DataFrame({"vel": fmod[col].round(2), "depth": fmod["depth_top"], "vdamp": vd})
-        blocks.append(ModelBlock(lay, label=f"{ph} final {result.select.statistic}"[:40]))
+        blocks.append(ModelBlock(lay, label=f"{ph} final {result.final_model_policy}"[:40]))
     if blocks[0] is None:
         raise EnsembleError("final model has no Vp")
     paths: dict[str, Path] = {}
     paths["final_model.mod"] = write_model(
         out / "final_model.mod",
-        VelestModel(f"osv ensemble {result.select.statistic}"[:40], blocks[0], blocks[1]),
+        VelestModel(f"osv ensemble {result.final_model_policy}"[:40], blocks[0], blocks[1]),
     )
     csv = fmod.rename(columns={"depth_top": "depth"})
     csv.to_csv(out / "final_model.csv", index=False)

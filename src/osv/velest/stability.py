@@ -74,6 +74,7 @@ from osv.io.velest import (
 )
 from osv.velest.ensemble import EnsembleResult, Finding
 from osv.velest.runner import STATUS_OK, VelestJob, run_jobs
+from osv.velest.workflow import _corr_station_file
 
 logger = logging.getLogger(__name__)
 
@@ -384,13 +385,15 @@ def _as_frame(model: ModelLike, control: VelestControl) -> pd.DataFrame:
     return df
 
 
-def _write_model_file(frame: pd.DataFrame, path: Path, vdamp: float = 1.0) -> Path:
+def _write_model_file(
+    frame: pd.DataFrame, path: Path, vdamp: float | Sequence[float] | np.ndarray = 1.0
+) -> Path:
     def block(col: str, label: str) -> ModelBlock:
         lay = pd.DataFrame(
             {
                 "vel": frame[col].round(2),
                 "depth": frame["depth_top"].round(2),
-                "vdamp": vdamp,
+                "vdamp": np.broadcast_to(np.asarray(vdamp, float), (len(frame),)).copy(),
             }
         )
         return ModelBlock(lay, label=label)
@@ -487,6 +490,49 @@ def _job(
     return VelestJob(rid, model_path, ctrl, cnv, sta)
 
 
+def _p_weighted(ctrl: VelestControl, scfg: StabilityConfig) -> VelestControl:
+    """Control for runs that *invert* station delays: S weight ``delay_swtfac`` with ``nsp = 3``.
+
+    With ``nsp = 3`` the S delay is ``ptcor * vpvs`` but S readings give no delay partials
+    (``velest.f:4100``), so inverting delays with S data weighted makes the RMS climb (see
+    ``docs/stage2_velest.md``); a small S weight makes the inversion P-driven and consistent.
+    Other ``nsp`` or ``delay_swtfac = None``: unchanged.
+    """
+    out = copy.deepcopy(ctrl)
+    if out.nsp == 3 and scfg.delay_swtfac is not None:
+        out.swtfac = float(scfg.delay_swtfac)
+    return out
+
+
+def _frozen_delay_inputs(
+    inputs: InputsLike,
+    ctrl: VelestControl,
+    reference: FixedModelResult | None,
+    scfg: StabilityConfig,
+    root: Path,
+) -> tuple[Path, VelestControl]:
+    """Station file with the reference run's delays and a control that holds them fixed.
+
+    Used by the tests that invert velocities or hypocentres with ``nsp = 3`` and full S weight:
+    the delays come from the (consistent) fixed-model run instead of being re-inverted.
+    Returns ``(sta_path, control)``; unchanged inputs when not applicable.
+    """
+    if (
+        ctrl.nsp != 3
+        or scfg.delay_swtfac is None
+        or reference is None
+        or not len(reference.station_delays)
+    ):
+        return Path(inputs.sta_path), ctrl
+    name = ctrl.stationfile or Path(inputs.sta_path).name
+    sta = _corr_station_file(
+        Path(inputs.sta_path), reference.station_delays, root / "_inputs" / "delays" / name
+    )
+    out = copy.deepcopy(ctrl)
+    out.iusestacorr, out.nsinv = 1, 0
+    return sta, out
+
+
 def _run(jobs: list[VelestJob], root: Path, n_jobs: int, timeout: float | None) -> pd.DataFrame:
     # always re-run: the inputs (perturbations, model) may have changed since a previous call
     return run_jobs(jobs, root, n_jobs=n_jobs, timeout=timeout, progress=False, force=True)
@@ -511,6 +557,20 @@ def _n_lvz(vp: np.ndarray) -> int:
 # ----------------------------------------------------------------------------------------
 
 
+def _failed_fixed(run_id: str, row: Any) -> FixedModelResult:
+    return FixedModelResult(
+        run_id,
+        Path(row.run_dir),
+        row.status,
+        None,
+        float("nan"),
+        pd.DataFrame(columns=["layer", "depth_top", "vp", "vs", "hits"]),
+        float("nan"),
+        pd.DataFrame(columns=["sta", "ptcor", "stcor", "nobs"]),
+        pd.DataFrame(columns=["event", "lat", "lon", "depth_km", "rms"]),
+    )
+
+
 def fixed_model_run(
     final_model: ModelLike,
     inputs: InputsLike,
@@ -522,6 +582,7 @@ def fixed_model_run(
     run_id: str = "fixed",
     cnv_path: Path | str | None = None,
     timeout: float | None = 3600.0,
+    vdamp: float | Sequence[float] | np.ndarray = 1.0,
 ) -> FixedModelResult:
     """Run VELEST with ``final_model`` held fixed.
 
@@ -539,35 +600,52 @@ def fixed_model_run(
         Overrides ``cfg.fixed_vthet`` (default ``velest.stability.fixed_vthet``).
     cnv_path
         Alternative input CNV (default ``inputs.cnv_path``).
+    vdamp
+        ``vdamp`` written into the model file.
 
     Returns
     -------
     FixedModelResult
         ``ok`` is False (and ``parsed`` None) when the run failed.
+
+    Notes
+    -----
+    With ``nsp = 3`` and ``cfg.delay_swtfac`` set (default) the run has two steps, because
+    inverting station delays with S data at full weight is inconsistent (see
+    :func:`_p_weighted`): step 1 (``<run_id>_delays``) inverts delays and hypocentres with the
+    S weight ``delay_swtfac``; step 2 (``<run_id>``, the returned run) holds those delays fixed
+    and relocates the hypocentres with the full data, so the reported RMS, delays and
+    hypocentres are consistent with each other and include the S picks.
     """
     scfg = cfg or StabilityConfig()
     ctrl = _control(inputs, control)
     ctrl.vthet = float(vthet if vthet is not None else scfg.fixed_vthet)
     frame = _as_frame(final_model, ctrl)
     root_p = Path(root)
-    mpath = _write_model_file(frame, root_p / "_inputs" / f"{run_id}.mod")
-    job = _job(run_id, mpath, ctrl, cnv_path or inputs.cnv_path, inputs.sta_path)
+    mpath = _write_model_file(frame, root_p / "_inputs" / f"{run_id}.mod", vdamp)
+    cnv_in: Path | str = cnv_path or inputs.cnv_path
+    sta_in: Path | str = inputs.sta_path
+    if ctrl.nsp == 3 and scfg.delay_swtfac is not None:
+        c1 = _p_weighted(ctrl, scfg)
+        t1 = _run([_job(f"{run_id}_delays", mpath, c1, cnv_in, sta_in)], root_p, 1, timeout)
+        r1 = _row_of(t1, f"{run_id}_delays")
+        d1 = _delays_of(r1.parsed) if _usable(r1) else pd.DataFrame()
+        if not (_usable(r1) and len(d1)):
+            logger.warning("fixed-model delay step failed: %s", r1.error)
+            return _failed_fixed(run_id, r1)
+        name = ctrl.stationfile or Path(inputs.sta_path).name
+        sta_in = _corr_station_file(
+            Path(inputs.sta_path), d1, root_p / "_inputs" / f"{run_id}_delays" / name
+        )
+        cnv_in = Path(r1.cnv_path) if r1.cnv_path else cnv_in
+        ctrl.iusestacorr, ctrl.nsinv = 1, 0
+    job = _job(run_id, mpath, ctrl, cnv_in, sta_in)
     table = _run([job], root_p, 1, timeout)
     row = _row_of(table, run_id)
     parsed = row.parsed if _usable(row) else None
     if parsed is None:
         logger.warning("fixed-model run failed: %s", row.error)
-        return FixedModelResult(
-            run_id,
-            Path(row.run_dir),
-            row.status,
-            None,
-            float("nan"),
-            pd.DataFrame(columns=["layer", "depth_top", "vp", "vs", "hits"]),
-            float("nan"),
-            pd.DataFrame(columns=["sta", "ptcor", "stcor", "nobs"]),
-            pd.DataFrame(columns=["event", "lat", "lon", "depth_km", "rms"]),
-        )
+        return _failed_fixed(run_id, row)
     model = _model_of(parsed)
     assert model is not None
     dv = max(_dv(model, frame, "vp"), _dv(model, frame, "vs") if np.isfinite(model.vs).all() else 0)
@@ -748,6 +826,7 @@ def hypocentre_perturbation_test(
     n_tests: int | None = None,
     n_jobs: int = -1,
     timeout: float | None = 3600.0,
+    vdamp: float | Sequence[float] | np.ndarray = 1.0,
 ) -> StabilityResult:
     """Perturb all starting hypocentres randomly and relocate (fixed and free velocities).
 
@@ -775,6 +854,13 @@ def hypocentre_perturbation_test(
         Random seed (Generator); the same seed gives the same perturbations.
     n_tests
         Overrides ``hypocentre_perturbation_km.n_tests``.
+    vdamp
+        ``vdamp`` of the free runs' model file.
+
+    Notes
+    -----
+    With ``nsp = 3`` the station delays are held at the values of ``reference`` (see
+    :func:`_frozen_delay_inputs`).
 
     Returns
     -------
@@ -795,23 +881,25 @@ def hypocentre_perturbation_test(
     start = _as_frame(final_model, ctrl)
     if reference is None:
         reference = fixed_model_run(
-            final_model, inputs, ctrl, root_p / "_reference", cfg=scfg, timeout=timeout
-        )
+            final_model, inputs, ctrl, root_p / "_reference", cfg=scfg, timeout=timeout,
+            vdamp=vdamp,
+        )  # fmt: skip
     if not reference.ok:
         raise StabilityError(
             f"the unperturbed fixed-model run failed ({reference.status}); see {reference.run_dir}"
         )
+    sta_path, ctrl = _frozen_delay_inputs(inputs, ctrl, reference, scfg, root_p)
 
     cnv = read_cnv(inputs.cnv_path)
     floor = max(float(start["depth_top"].iloc[0]), ctrl.zmin + ZMIN_MARGIN_KM)
     rng = np.random.default_rng(seed)
     inp_dir = root_p / "_inputs"
     inp_dir.mkdir(parents=True, exist_ok=True)
-    mpath = _write_model_file(start, inp_dir / "start.mod")
+    mpath = _write_model_file(start, inp_dir / "start.mod", vdamp)
 
     fixed_ctrl = copy.deepcopy(ctrl)
     fixed_ctrl.vthet = scfg.fixed_vthet
-    jobs = [_job("hypo_base_free", mpath, ctrl, inputs.cnv_path, inputs.sta_path)]
+    jobs = [_job("hypo_base_free", mpath, ctrl, inputs.cnv_path, sta_path)]
     applied: dict[str, pd.DataFrame] = {}
     meta: dict[str, tuple[str, int]] = {"hypo_base_free": ("baseline_free", -1)}
     cnv_name = ctrl.phasefile or Path(inputs.cnv_path).name
@@ -822,7 +910,7 @@ def hypocentre_perturbation_test(
         write_cnv(p, ev.drop(columns=["pert_dx_km", "pert_dy_km", "pert_dz_km"]), cnv.picks)
         for variant, c in (("fixed", fixed_ctrl), ("free", ctrl)):
             rid = f"hypo_{variant}_{k:03d}"
-            jobs.append(_job(rid, mpath, c, p, inputs.sta_path))
+            jobs.append(_job(rid, mpath, c, p, sta_path))
             applied[rid] = ev
             meta[rid] = (variant, k)
     table = _run(jobs, root_p, n_jobs, timeout)
@@ -1069,8 +1157,12 @@ def reference_station_test(
     reference_stations: Sequence[str] | None = None,
     n_jobs: int = -1,
     timeout: float | None = 3600.0,
+    vdamp: float | Sequence[float] | np.ndarray = 1.0,
 ) -> StabilityResult:
     """Repeat the free inversion with other reference stations.
+
+    With ``nsp = 3`` the runs invert delays, so they use the S weight
+    ``velest.stability.delay_swtfac`` (:func:`_p_weighted`).
 
     The baseline run uses the original reference station (highest ``icc`` of
     ``inputs.sta_path``); each alternative gets a station file in which that station has the
@@ -1093,7 +1185,7 @@ def reference_station_test(
     del seed  # deterministic; kept for a uniform signature
     vcfg = getattr(cfg, "velest", cfg)
     scfg: StabilityConfig = vcfg.stability
-    ctrl = _control(inputs, control)
+    ctrl = _p_weighted(_control(inputs, control), scfg)
     root_p = Path(root)
     test = "reference_station"
     start = _as_frame(final_model, ctrl)
@@ -1106,7 +1198,7 @@ def reference_station_test(
         )
     alts = [a for a in dict.fromkeys(alts) if a != original]
     inp_dir = root_p / "_inputs"
-    mpath = _write_model_file(start, inp_dir / "start.mod")
+    mpath = _write_model_file(start, inp_dir / "start.mod", vdamp)
     sta_name = ctrl.stationfile or Path(inputs.sta_path).name
 
     jobs = [_job("ref_baseline", mpath, ctrl, inputs.cnv_path, inputs.sta_path)]
@@ -1282,6 +1374,8 @@ def lvz_test(
     extra_models: Mapping[str, ModelLike] | None = None,
     n_jobs: int = -1,
     timeout: float | None = 3600.0,
+    vdamp: float | Sequence[float] | np.ndarray = 1.0,
+    reference: FixedModelResult | None = None,
 ) -> StabilityResult:
     """Free inversion with ``lowveloclay`` 0 and 1 for the final and any extra models.
 
@@ -1292,13 +1386,15 @@ def lvz_test(
     ``lvz0`` / ``lvz1``) and summary metrics per model key (``test = "lvz"``, variant =
     key): ``rms_lvz0``, ``rms_lvz1``, ``rms_gain`` (lvz0 - lvz1; positive when allowing LVZ
     fits better), ``vp_dev_max`` (largest Vp difference between the two) and
-    ``n_lvz_layers`` of the lvz1 model.
+    ``n_lvz_layers`` of the lvz1 model.  With ``nsp = 3`` and a ``reference`` fixed-model run the
+    station delays are held at its values (:func:`_frozen_delay_inputs`).
     """
     del seed
     vcfg = getattr(cfg, "velest", cfg)
     scfg: StabilityConfig = vcfg.stability
     ctrl = _control(inputs, control)
     root_p = Path(root)
+    sta_path, ctrl = _frozen_delay_inputs(inputs, ctrl, reference, scfg, root_p)
     test = "lvz"
     models_in = {"final": final_model, **(dict(extra_models) if extra_models else {})}
     inp_dir = root_p / "_inputs"
@@ -1306,12 +1402,12 @@ def lvz_test(
     for key, m in models_in.items():
         frame = _as_frame(m, ctrl)
         starts[key] = frame
-        mpath = _write_model_file(frame, inp_dir / f"{_safe_id(key)}.mod")
+        mpath = _write_model_file(frame, inp_dir / f"{_safe_id(key)}.mod", vdamp)
         for lvz in (0, 1):
             c = copy.deepcopy(ctrl)
             c.lowveloclay = lvz
             rid = f"lvz_{_safe_id(key)}_{lvz}"
-            jobs.append(_job(rid, mpath, c, inputs.cnv_path, inputs.sta_path))
+            jobs.append(_job(rid, mpath, c, inputs.cnv_path, sta_path))
             meta[rid] = (key, lvz)
     table = _run(jobs, root_p, n_jobs, timeout)
 
@@ -1443,6 +1539,7 @@ def run_stability(
     n_tests: int | None = None,
     n_jobs: int = -1,
     timeout: float | None = 3600.0,
+    vdamp: float | Sequence[float] | np.ndarray = 1.0,
 ) -> StabilityResult:
     """Run the fixed-model run and all stability tests for an ensemble's final model.
 
@@ -1454,7 +1551,7 @@ def run_stability(
     root_p = Path(root)
     model = ensemble.final_model
     fixed = fixed_model_run(
-        model, inputs, control, root_p / "fixed_model", cfg=scfg, timeout=timeout
+        model, inputs, control, root_p / "fixed_model", cfg=scfg, timeout=timeout, vdamp=vdamp
     )
     if not fixed.ok:
         raise StabilityError(f"fixed-model run failed ({fixed.status}); see {fixed.run_dir}")
@@ -1462,7 +1559,7 @@ def run_stability(
     res = res.merge(
         hypocentre_perturbation_test(
             model, inputs, control, cfg, root_p / "hypocentre_perturbation", seed,
-            reference=fixed, n_tests=n_tests, n_jobs=n_jobs, timeout=timeout,
+            reference=fixed, n_tests=n_tests, n_jobs=n_jobs, timeout=timeout, vdamp=vdamp,
         )
     )  # fmt: skip
     res = res.merge(
@@ -1480,7 +1577,8 @@ def run_stability(
         res = res.merge(
             lvz_test(
                 model, inputs, control, cfg, root_p / "lvz", seed,
-                extra_models=extra, n_jobs=n_jobs, timeout=timeout,
+                extra_models=extra, n_jobs=n_jobs, timeout=timeout, vdamp=vdamp,
+                reference=fixed,
             )
         )  # fmt: skip
     if fixed.max_velocity_change >= 0.011:

@@ -16,6 +16,8 @@ from osv.velest.ensemble import (
     EnsembleError,
     QCThresholds,
     analyse_ensemble,
+    final_model_checks,
+    with_final_model,
     write_ensemble,
 )
 from osv.velest.models import TrialModel
@@ -351,3 +353,91 @@ def test_real_ensemble(tmp_path):
         print(f.severity, f.code, f.message)
     assert len(res.selected_ids) >= 1
     assert (tmp_path / "ens" / "final_model.mod").is_file()
+
+
+# --- final-model policy and final-model checks (osv-iu9.10) ----------------------------------
+
+
+def _policy(policy, items=None, **kw):
+    cfg = VelestSelect(method="best_n", value=5, statistic="median", final_model=policy)
+    return analyse_ensemble(table(items or ensemble()), None, cfg, **kw)
+
+
+def test_final_model_policy_median_best_closest():
+    items = ensemble()
+    v = lambda i: items[i].final_model.p.layers["vel"].to_numpy()  # noqa: E731
+    med = _policy("median")
+    assert med.final_model_policy == "median"
+    assert np.allclose(med.final_model["vp"], np.median([v(i) for i in med.selected_ids], axis=0))
+    best = _policy("best")
+    assert best.final_model_policy == "best"
+    assert np.allclose(best.final_model["vp"], v("R00"))
+    assert np.allclose(best.final_model["vs"], v("R00") / 1.75)
+    closest = _policy("closest")
+    assert np.allclose(closest.final_model["vp"], v(closest.closest_run_id))
+    assert closest.closest_run_id == "R02" and closest.final_model_policy == "closest"
+    assert _policy("iterated").final_model_policy == "iterated"
+    # uncertainty always describes the selected ensemble, whatever the policy
+    for r in (med, best, closest):
+        assert np.allclose(r.final_model["vp_p05"], med.final_model["vp_p05"])
+        assert np.allclose(r.final_model["vp_std"], med.final_model["vp_std"])
+    assert med.summary()["final_model_policy"] == "median"
+
+
+def test_with_final_model_replaces_velocities_keeps_uncertainty():
+    res = _policy("iterated")
+    new = with_final_model(res, [2.5, 3.5, 4.5, 5.5])
+    assert np.allclose(new.final_model["vp"], [2.5, 3.5, 4.5, 5.5])
+    assert np.allclose(new.final_model["vs"], np.array([2.5, 3.5, 4.5, 5.5]) / 1.75)
+    assert np.allclose(new.final_model["vpvs"], 1.75)
+    assert np.allclose(new.final_model["vp_p95"], res.final_model["vp_p95"])
+    assert new.closest_run_id == res.closest_run_id and new is not res
+    explicit = with_final_model(res, [2, 3, 4, 5], vs=[1, 2, 3, 4], policy="x")
+    assert (
+        np.allclose(explicit.final_model["vs"], [1, 2, 3, 4]) and explicit.final_model_policy == "x"
+    )
+    with pytest.raises(EnsembleError):
+        with_final_model(res, [1.0, 2.0])
+    # lvz findings follow the new model
+    assert "lvz" not in codes(res)
+    assert "lvz" in codes(with_final_model(res, [2.0, 4.0, 3.0, 5.0]))
+    assert "lvz" not in codes(
+        with_final_model(with_final_model(res, [2.0, 4.0, 3.0, 5.0]), [2, 3, 4, 5])
+    )
+
+
+def test_final_model_checks_floor_bounds_divergence():
+    bounds = [[1.5, 3.0], [2.5, 4.0], [3.5, 5.0], [4.5, 6.0]]
+    res = _policy("median", vp_bounds=bounds)
+    assert not {"vp_below_floor", "final_out_of_bounds", "divergence_rate"} & codes(res)
+    bad = with_final_model(res, [0.7, 3.0, 4.0, 5.0])
+    assert {"vp_below_floor", "final_out_of_bounds"} <= codes(bad, "warn")
+    f = {x.code: x for x in bad.findings}
+    assert f["vp_below_floor"].layer == 0 and f["final_out_of_bounds"].data["side"] == "lower"
+    # inside 10 % of the range beyond the bound is tolerated: 1.5 - 0.15 = 1.35
+    assert "final_out_of_bounds" not in codes(with_final_model(res, [1.4, 3.0, 4.0, 5.0]))
+    assert "final_out_of_bounds" in codes(with_final_model(res, [1.3, 3.0, 4.0, 5.0]))
+    assert "vp_below_floor" in codes(with_final_model(res, [1.4, 3.0, 4.0, 5.0]))  # 1.4 < 1.5
+    high = with_final_model(res, [2.0, 3.0, 4.0, 6.4])
+    assert {x.data["side"] for x in high.findings if x.code == "final_out_of_bounds"} == {"upper"}
+    # thresholds are configurable
+    th = QCThresholds(vp_floor_km_s=0.5, out_of_bounds_fraction=1.0)
+    assert not {"vp_below_floor", "final_out_of_bounds"} & {
+        f.code for f in final_model_checks(bad, th)
+    }
+
+
+def test_divergence_rate_finding():
+    items = ensemble()
+    for k in range(3):  # 3 of 10 diverged (the worst RMS runs)
+        items[f"R{9 - k:02d}"].diverged = True
+    res = _policy("median", items)
+    assert "divergence_rate" in codes(res, "warn")  # 30 % > 20 %
+    items["R07"].diverged = False
+    items["R08"].diverged = False
+    assert "divergence_rate" not in codes(_policy("median", items))  # 10 %
+    cfg = VelestSelect(method="best_n", value=5)
+    strict = analyse_ensemble(
+        table(items), None, cfg, thresholds=QCThresholds(max_divergence_rate=0.05)
+    )
+    assert "divergence_rate" in codes(strict)

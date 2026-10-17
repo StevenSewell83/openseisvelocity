@@ -66,6 +66,7 @@ __all__ = [
     "VpVsResolutionError",
     "perturb_model",
     "resolve_stages",
+    "resolve_vdamp",
     "resolve_vpvs",
     "run_mc_workflow",
     "select_seeds",
@@ -216,6 +217,56 @@ def resolve_stages(cfg: Any) -> list[DampingStage]:
     return out
 
 
+def resolve_vdamp(
+    cfg: Any,
+    n_layers: int | None = None,
+    *,
+    layers_top_km: Sequence[float] | None = None,
+    station_z_km: Sequence[float] | None = None,
+    event_depth_km: Sequence[float] | None = None,
+) -> np.ndarray:
+    """Per-layer VELEST velocity damping factors (``vdamp`` of the model file).
+
+    VELEST damps layer ``i`` with ``vthet * vdamp[i]`` (user guide p. 21; ``vdamp = 999`` almost
+    fixes a layer).  ``velest.vdamp`` is a number (all layers), a list (one value per layer) or
+    ``"auto"``:
+
+    * layers that start above the deepest station (``top < max(station_z)``): every ray crosses
+      them at a steep angle, so their velocity trades off with the station delays;
+      ``vdamp_auto.near_surface`` for these;
+    * layers that start below the deepest hypocentre (``top > max(event_depth)``): only
+      refracted rays sample them; ``vdamp_auto.below_events``;
+    * all others 1.
+
+    Without the geometry arguments (``station_z_km``, ``event_depth_km``) the corresponding rule
+    is skipped, so ``"auto"`` gives ones.
+
+    Parameters
+    ----------
+    cfg
+        ``OSVConfig`` or its ``velest`` section.
+    n_layers, layers_top_km
+        Layer count (default ``len(cfg.layers_top_km)``) and the layer tops used by ``"auto"``
+        (default ``cfg.layers_top_km``).
+    station_z_km, event_depth_km
+        Station depths (``-elevation / 1000``, km positive down) and hypocentre depths (km).
+    """
+    v = _vcfg(cfg)
+    tops = np.asarray(layers_top_km if layers_top_km is not None else v.layers_top_km, float)
+    n = len(tops) if n_layers is None else n_layers
+    spec = v.vdamp
+    if isinstance(spec, str):
+        out = np.ones(n)
+        if station_z_km is not None and len(station_z_km):
+            out[tops < float(np.max(station_z_km))] = v.vdamp_auto.near_surface
+        if event_depth_km is not None and len(event_depth_km):
+            below = tops > float(np.max(event_depth_km))
+            out[below] = np.maximum(out[below], v.vdamp_auto.below_events)
+        return out
+    arr = np.broadcast_to(np.asarray(spec, float), (n,)).copy()
+    return arr
+
+
 def _stage_control(
     base: VelestControl, st: DampingStage, use_stacorr: bool, vpvs: float | None = None
 ) -> VelestControl:
@@ -225,6 +276,8 @@ def _stage_control(
     c.othet, c.xythet, c.zthet = float(st.othet), float(st.xythet), float(st.zthet)  # type: ignore[arg-type]
     c.vthet, c.stathet = float(st.vthet), float(st.stathet)  # type: ignore[arg-type]
     c.ittmax, c.invertratio = int(st.ittmax), int(st.invertratio)  # type: ignore[arg-type]
+    if st.swtfac is not None:
+        c.swtfac = float(st.swtfac)
     if use_stacorr:
         c.iusestacorr = 1
     if st.invert_station_delays is not None:
@@ -232,16 +285,38 @@ def _stage_control(
     return c
 
 
-def _trial_to_velest(m: TrialModel, nmod: int = 2) -> VelestModel:
+def _trial_to_velest(
+    m: TrialModel, nmod: int = 2, vdamp: float | Sequence[float] | np.ndarray = 1.0
+) -> VelestModel:
     blocks = []
     for label, vel in (("P", m.vp), ("S", m.vs)):
         if label == "S" and nmod != 2:
             break
-        lay = pd.DataFrame({"vel": vel, "depth": m.depths, "vdamp": 1.0})
+        vd = np.broadcast_to(np.asarray(vdamp, float), (len(vel),))
+        lay = pd.DataFrame({"vel": vel, "depth": m.depths, "vdamp": vd})
         blocks.append(ModelBlock(lay, label=f"{label} {m.id}"))
     return VelestModel(
         f"{m.id} {m.sampler}"[:40], blocks[0], blocks[1] if len(blocks) > 1 else None
     )
+
+
+def _vd_list(
+    vdamp: float | Sequence[float] | np.ndarray, model: TrialModel | VelestModel
+) -> list[float]:
+    n = len(model.p.layers) if isinstance(model, VelestModel) else model.n_layers
+    return [float(x) for x in np.broadcast_to(np.asarray(vdamp, float), (n,))]
+
+
+def _with_vdamp(model: VelestModel, vdamp: float | Sequence[float] | np.ndarray) -> VelestModel:
+    """Copy of ``model`` with ``vdamp`` (scalar or one value per layer) in every block."""
+    blocks: list[ModelBlock] = []
+    for blk in (model.p, model.s):
+        if blk is None:
+            continue
+        lay = blk.layers.copy()
+        lay["vdamp"] = np.broadcast_to(np.asarray(vdamp, float), (len(lay),)).copy()
+        blocks.append(ModelBlock(lay, label=blk.label, comment=blk.comment))
+    return VelestModel(model.title, blocks[0], blocks[1] if len(blocks) > 1 else None)
 
 
 def _velest_to_trial(
@@ -371,6 +446,7 @@ def _run_schedule(
     timeout: float | None,
     force: bool,
     compact: bool,
+    vdamp: float | Sequence[float] | np.ndarray = 1.0,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Run all stages for ``entries``; returns (history rows, last-row records)."""
     hist: list[dict[str, Any]] = []
@@ -398,7 +474,7 @@ def _run_schedule(
             else:
                 model = _model_path(e.model, inp / f"{e.id}.mod", inputs.control.nmod)
             ctrl = _stage_control(inputs.control, st, corr is not None, e.vpvs)
-            jobs.append(VelestJob(e.id, model, ctrl, cnv, sta))
+            jobs.append(VelestJob(e.id, model, ctrl, cnv, sta, vdamp=_vd_list(vdamp, e.model)))
         logger.info(
             "round %d stage %d/%d (%s): %d runs", round_no, k, len(stages), st.name, len(jobs)
         )
@@ -455,6 +531,7 @@ def run_mc_workflow(
     timeout: float | None = 3600.0,
     force: bool = False,
     compact: bool = False,
+    vdamp: float | Sequence[float] | np.ndarray | None = None,
 ) -> WorkflowResult:
     """Run the damping schedule (and optional reseeded rounds) for every trial model.
 
@@ -483,6 +560,10 @@ def run_mc_workflow(
         Seed of the reseed perturbations (default ``cfg.project.random_seed``).
     timeout, force, compact
         Passed to :func:`~osv.velest.runner.run_jobs`.
+    vdamp
+        Per-layer ``vdamp`` written into the first-stage model files (later stages inherit
+        it).  Default: :func:`resolve_vdamp` of ``cfg`` without geometry (``"auto"`` gives
+        ones; pass the resolved array from the stage for a geometry-based choice).
 
     Returns
     -------
@@ -491,6 +572,7 @@ def run_mc_workflow(
     """
     v = _vcfg(cfg)
     stages = resolve_stages(cfg)
+    vd = resolve_vdamp(cfg) if vdamp is None else np.asarray(vdamp, float)
     rootp = Path(root)
     rootp.mkdir(parents=True, exist_ok=True)
     base_cnv = Path(inputs.cnv_path)
@@ -499,7 +581,9 @@ def run_mc_workflow(
         _Entry(m.id, None, m.id, m, base_cnv, None, vpvs=model_vpvs(m) if nsp3 else None)
         for m in models
     ]
-    hist, last = _run_schedule(entries, inputs, stages, rootp, 1, n_jobs, timeout, force, compact)
+    hist, last = _run_schedule(
+        entries, inputs, stages, rootp, 1, n_jobs, timeout, force, compact, vd
+    )
     all_last = list(last)
     all_entries = list(entries)
     final_models = _collect_models(entries, inputs, _seed(cfg, seed))
@@ -547,7 +631,7 @@ def run_mc_workflow(
                     )
             logger.info("reseed round %d: %d seeds x %d copies", rnd, len(seeds), n_copies)
             h, last = _run_schedule(
-                new, inputs, stages, rootp, rnd, n_jobs, timeout, force, compact
+                new, inputs, stages, rootp, rnd, n_jobs, timeout, force, compact, vd
             )
             hist += h
             all_last += last
@@ -607,6 +691,7 @@ def iterate_final_model(
     force: bool = False,
     vpvs: float | None = None,
     freeze_station_delays: bool | None = None,
+    vdamp: float | Sequence[float] | np.ndarray | None = None,
 ) -> IterationResults:
     """Repeat VELEST from its own outputs until the changes are negligible.
 
@@ -640,6 +725,9 @@ def iterate_final_model(
         ones estimated; freezing them makes the repeat cycles refine velocities and
         hypocentres only.
 
+    vdamp
+        Per-layer ``vdamp`` written into the model files (default: as in the model given).
+
     Returns
     -------
     IterationResults
@@ -659,6 +747,8 @@ def iterate_final_model(
         cur = model
     else:
         cur = read_model(model, nmod=inputs.control.nmod)
+    if vdamp is not None:
+        cur = _with_vdamp(cur, vdamp)
     cnv = Path(cnv_path) if cnv_path is not None else Path(inputs.cnv_path)
     corr = corrections
     prev_hypo: pd.DataFrame | None = None
