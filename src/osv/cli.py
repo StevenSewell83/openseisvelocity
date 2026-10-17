@@ -5,9 +5,13 @@ Each command is a separate function so later tasks can replace one at a time.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 
 from osv import __version__
+from osv import stages as _stages
+from osv.config import ConfigError, OSVConfig, dump_config, load_config, write_template
 
 app = typer.Typer(
     name="osv",
@@ -46,9 +50,18 @@ def version_cmd() -> None:
 
 
 @app.command("init")
-def init_cmd() -> None:
+def init_cmd(
+    directory: Path = typer.Argument(..., help="Project directory to create."),
+    name: str | None = typer.Option(None, "--name", help="Project name (default: directory name)."),
+    force: bool = typer.Option(False, "--force", help="Overwrite an existing config.yaml."),
+) -> None:
     """Create a new project directory with a config.yaml template."""
-    _not_implemented("init")
+    try:
+        target = write_template(directory, force=force, project_name=name)
+    except FileExistsError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    typer.echo(f"Wrote {target}")
 
 
 @app.command("doctor")
@@ -57,73 +70,111 @@ def doctor_cmd() -> None:
     _not_implemented("doctor")
 
 
-@app.command("prep")
-def prep_cmd() -> None:
-    """Stage 1: prepare and QC catalogue and station data."""
-    _not_implemented("prep")
+def _load_cfg(config: Path) -> OSVConfig:
+    try:
+        return load_config(config)
+    except ConfigError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from None
 
 
-@app.command("velest-mc")
-def velest_mc_cmd() -> None:
-    """Stage 2: run VELEST Monte Carlo ensemble."""
-    _not_implemented("velest-mc")
+CONFIG_OPT = typer.Option(Path("config.yaml"), "--config", "-c", help="Config file.")
+FORCE_OPT = typer.Option(False, "--force", help="Re-run even if up to date.")
+FROM_OPT = typer.Option(None, "--from", help="First stage to run.")
+TO_OPT = typer.Option(None, "--to", help="Last stage to run.")
 
 
-@app.command("velest-analyse")
-def velest_analyse_cmd() -> None:
-    """Stage 2: analyse the VELEST ensemble."""
-    _not_implemented("velest-analyse")
+def _execute(
+    config: Path, *, from_: str | None, to: str | None, force: bool, only: str | None = None
+) -> None:
+    """Run the pipeline, reporting results/errors in CLI style."""
+    cfg = _load_cfg(config)
+    try:
+        result = _stages.run_pipeline(cfg, from_=from_, to=to, force=force, only=only)
+    except _stages.StageError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    for name, state in result.items():
+        typer.echo(f"{name}: {state}")
+    if not result:
+        typer.echo("No stages selected.")
 
 
-@app.command("build-model")
-def build_model_cmd() -> None:
-    """Stage 3: build the FMTOMO starting model."""
-    _not_implemented("build-model")
+def bind_stage_command(name: str, help_text: str) -> None:
+    """Register ``osv <name>`` running that stage (placeholder until the stage exists).
+
+    A later task only has to register its `osv.stages.Stage` subclass (and list
+    its module in `osv.stages.STAGE_MODULES`); this command then runs it with
+    the shared ``--config/--force/--from/--to`` options.
+    """
+    stage_name = _stages.normalise_name(name)
+
+    def command(
+        config: Path = CONFIG_OPT,
+        force: bool = FORCE_OPT,
+        from_: str | None = FROM_OPT,
+        to: str | None = TO_OPT,
+    ) -> None:
+        _stages.discover()
+        if stage_name not in {c.name for c in _stages.registered_stages()}:
+            _not_implemented(name)
+        _execute(config, from_=from_, to=to, force=force, only=stage_name)
+
+    command.__doc__ = help_text
+    app.command(name)(command)
 
 
-@app.command("tradeoff")
-def tradeoff_cmd() -> None:
-    """Stage 4: run damping/smoothing trade-off sweeps."""
-    _not_implemented("tradeoff")
-
-
-@app.command("invert")
-def invert_cmd() -> None:
-    """Stage 4: run the FMTOMO inversion."""
-    _not_implemented("invert")
-
-
-@app.command("analyse")
-def analyse_cmd() -> None:
-    """Stage 5: analyse inversion results."""
-    _not_implemented("analyse")
-
-
-@app.command("resolution")
-def resolution_cmd() -> None:
-    """Stage 6: run resolution tests."""
-    _not_implemented("resolution")
-
-
-@app.command("report")
-def report_cmd() -> None:
-    """Build the project report."""
-    _not_implemented("report")
+for _name, _help in [
+    ("prep", "Stage 1: prepare and QC catalogue and station data."),
+    ("velest-mc", "Stage 2: run VELEST Monte Carlo ensemble."),
+    ("velest-analyse", "Stage 2: analyse the VELEST ensemble."),
+    ("build-model", "Stage 3: build the FMTOMO starting model."),
+    ("tradeoff", "Stage 4: run damping/smoothing trade-off sweeps."),
+    ("invert", "Stage 4: run the FMTOMO inversion."),
+    ("analyse", "Stage 5: analyse inversion results."),
+    ("resolution", "Stage 6: run resolution tests."),
+    ("validation", "Stage 7: validate against 1-D relocation and bootstrap."),
+    ("report", "Build the project report."),
+]:
+    bind_stage_command(_name, _help)
 
 
 @app.command("run")
-def run_cmd() -> None:
-    """Run all stages."""
-    _not_implemented("run")
+def run_cmd(
+    config: Path = CONFIG_OPT,
+    force: bool = FORCE_OPT,
+    from_: str | None = FROM_OPT,
+    to: str | None = TO_OPT,
+) -> None:
+    """Run all stages (skipping those that are up to date)."""
+    _stages.discover()
+    _execute(config, from_=from_, to=to, force=force)
 
 
 @app.command("plot")
-def plot_cmd() -> None:
+def plot_cmd(
+    stage: str = typer.Argument(..., help="Stage name, e.g. prep or velest-mc."),
+    config: Path = CONFIG_OPT,
+) -> None:
     """Regenerate figures for a stage without re-running it."""
-    _not_implemented("plot")
+    _stages.discover()
+    cfg = _load_cfg(config)
+    try:
+        _stages.plot_only(cfg, stage)
+    except _stages.StageError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    typer.echo(f"{_stages.normalise_name(stage)}: figures regenerated")
 
 
 @config_app.command("show")
-def config_show_cmd() -> None:
-    """Print the settings in use."""
-    _not_implemented("config show")
+def config_show_cmd(
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Config file."),
+) -> None:
+    """Print the settings in use (resolved config as YAML)."""
+    try:
+        cfg = load_config(config)
+    except ConfigError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from None
+    typer.echo(dump_config(cfg), nl=False)

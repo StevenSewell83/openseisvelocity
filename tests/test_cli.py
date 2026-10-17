@@ -10,7 +10,7 @@ runner = CliRunner()
 
 COMMANDS = [
     "init", "doctor", "prep", "velest-mc", "velest-analyse", "build-model", "tradeoff",
-    "invert", "analyse", "resolution", "report", "run", "plot", "config", "version",
+    "invert", "analyse", "resolution", "validation", "report", "run", "plot", "config", "version",
 ]  # fmt: skip
 
 
@@ -27,7 +27,7 @@ def test_version_flag_and_command() -> None:
 
 
 @pytest.mark.parametrize(
-    "args", [[c] for c in COMMANDS if c not in ("config", "version")] + [["config", "show"]]
+    "args", [[c] for c in COMMANDS if c not in ("config", "version", "init", "run", "plot")]
 )
 def test_placeholders_exit_1(args: list[str]) -> None:
     result = runner.invoke(app, args)
