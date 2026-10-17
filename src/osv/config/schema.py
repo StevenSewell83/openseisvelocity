@@ -302,7 +302,12 @@ class VpVsConfig(_Base):
         "VELEST with nsp=3 (S picks used with Vs = Vp/vpvs, only a P model inverted). "
         "'independent_s_model' samples a separate S velocity model (nsp=2).",
     )
-    value: float = F(1.75, "Vp/Vs ratio for mode 'fixed'.", gt=1.0)
+    value: float | Literal["wadati"] = F(
+        1.75,
+        "Vp/Vs ratio for mode 'fixed'. 'wadati' uses the Stage 1 Wadati-diagram ratio "
+        "(prep stage's wadati.json), resolved when Stage 2 starts "
+        "(osv.velest.workflow.resolve_vpvs).",
+    )
     range: Bounds = F((1.65, 1.85), "[min, max] Vp/Vs for mode 'sampled'.")
     s_bounds: list[Bounds] | None = F(
         None,
@@ -310,6 +315,13 @@ class VpVsConfig(_Base):
         "length as layers_top_km). Default: derived from vp_bounds and 'range' "
         "(lower/range[1], upper/range[0]).",
     )
+
+    @field_validator("value")
+    @classmethod
+    def _check_value(cls, v: float | str) -> float | str:
+        if not isinstance(v, str) and not v > 1.0:
+            raise ValueError("Vp/Vs must be > 1")
+        return v
 
     @model_validator(mode="after")
     def _check(self) -> VpVsConfig:
@@ -423,6 +435,13 @@ class DampingStage(_Base):
         True,
         "Start from the previous stage's station delays (written to the stage's station "
         "file; sets iusestacorr = 1 so VELEST reads them).",
+    )
+    invert_station_delays: bool | None = F(
+        None,
+        "Invert for station delays in this stage (VELEST nsinv). None: as the control "
+        "default (invert). With nsp = 3 (fixed Vp/Vs) the S delay is ptcor * vpvs but S "
+        "readings contribute no delay partials, so inverting delays with S data weighted "
+        "makes the RMS erratic (see docs/conventions.md); False holds the delays fixed.",
     )
 
 

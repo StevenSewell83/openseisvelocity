@@ -284,6 +284,15 @@ def _clean_picks(
 # ----------------------------------------------------------------------------------------
 
 
+def _fixed_vpvs(value: float | str) -> float:
+    if isinstance(value, str):
+        raise ValueError(
+            "velest.vpvs.value is 'wadati': resolve it with osv.velest.workflow.resolve_vpvs "
+            "and set a number before writing the VELEST inputs"
+        )
+    return float(value)
+
+
 def write_velest_inputs(
     selection: Selection,
     stations: StationTables,
@@ -564,7 +573,7 @@ def write_velest_inputs(
         vpvs=(
             float(sum(vcfg.vpvs.range) / 2.0)
             if vcfg.vpvs.mode == "sampled"
-            else float(vcfg.vpvs.value)
+            else _fixed_vpvs(vcfg.vpvs.value)
         ),
         othet=vcfg.damping.othet,
         xythet=vcfg.damping.xythet,

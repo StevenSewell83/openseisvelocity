@@ -17,6 +17,11 @@ Hand-off between runs
   and ``stcor`` (S) replaced by the previous run's totals (VELEST reports absolute delays:
   ``ptcor = ptcor + cc``, ``velest.f:4935``) and sets ``iusestacorr = 1`` for that run.
   The original station file keeps its ``icc`` indices (reference station).
+* With ``nsp = 3`` (fixed Vp/Vs) the S delay is ``ptcor * vpvs`` but S readings give no
+  delay partials (``velest.f:4100``), so *inverting* delays while S data are used is
+  inconsistent and makes the RMS erratic (``DampingStage.invert_station_delays`` can hold
+  them fixed).  The repeat loop of :func:`iterate_final_model` therefore freezes the
+  handed-on delays by default for ``nsp = 3``; the hand-off itself is exact.
 * A model whose run fails (or whose output cannot be parsed) is dropped from later stages;
   its last row stays in the run table with ``status != "ok"``.
 
@@ -27,6 +32,7 @@ Directories: round 1 uses ``<root>/stage<k>/<id>``; reseeded round ``r >= 2`` us
 from __future__ import annotations
 
 import copy
+import json
 import logging
 import math
 from collections.abc import Sequence
@@ -57,8 +63,10 @@ __all__ = [
     "IterationResults",
     "WorkflowResult",
     "iterate_final_model",
+    "VpVsResolutionError",
     "perturb_model",
     "resolve_stages",
+    "resolve_vpvs",
     "run_mc_workflow",
     "select_seeds",
 ]
@@ -139,6 +147,49 @@ def _seed(cfg: Any, seed: int | None) -> int:
     return int(getattr(getattr(cfg, "project", None), "random_seed", 0))
 
 
+class VpVsResolutionError(ValueError):
+    """``velest.vpvs.value = 'wadati'`` but no usable Wadati ratio is available."""
+
+
+def resolve_vpvs(cfg: Any, prep_stage_dir: str | Path) -> float:
+    """Vp/Vs ratio for the VELEST control file (``nsp = 3``).
+
+    A numeric ``velest.vpvs.value`` is returned unchanged.  With ``'wadati'`` the ratio is
+    read from ``wadati.json`` (key ``vpvs``) in the Stage 1 (data preparation) directory.
+    For ``vpvs.mode = 'sampled'`` the control ratio is the middle of ``range`` and this value
+    is not used (the function still resolves it).
+
+    Parameters
+    ----------
+    cfg
+        :class:`~osv.config.schema.OSVConfig` or its ``velest`` section.
+    prep_stage_dir
+        Directory of the data-preparation stage (holds ``wadati.json``).
+
+    Raises
+    ------
+    VpVsResolutionError
+        If ``wadati.json`` is missing, empty (too few S-P pairs for a Wadati fit), or holds a
+        ratio that is not finite and above 1.  Set ``velest.vpvs.value`` to a number then.
+    """
+    value = _vcfg(cfg).vpvs.value
+    if not isinstance(value, str):
+        return float(value)
+    path = Path(prep_stage_dir) / "wadati.json"
+    hint = "set velest.vpvs.value to a number or fix the Stage 1 Wadati fit"
+    if not path.is_file():
+        raise VpVsResolutionError(
+            f"velest.vpvs.value is 'wadati' but {path} does not exist; {hint}"
+        )
+    try:
+        ratio = float(json.loads(path.read_text()).get("vpvs", math.nan))
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise VpVsResolutionError(f"cannot read a Vp/Vs ratio from {path} ({exc}); {hint}") from exc
+    if not math.isfinite(ratio) or ratio <= 1.0:
+        raise VpVsResolutionError(f"{path}: Wadati Vp/Vs = {ratio!r} is unusable; {hint}")
+    return ratio
+
+
 def resolve_stages(cfg: Any) -> list[DampingStage]:
     """Stages with every ``None`` replaced by the top-level ``velest`` settings.
 
@@ -176,6 +227,8 @@ def _stage_control(
     c.ittmax, c.invertratio = int(st.ittmax), int(st.invertratio)  # type: ignore[arg-type]
     if use_stacorr:
         c.iusestacorr = 1
+    if st.invert_station_delays is not None:
+        c.nsinv = int(st.invert_station_delays)
     return c
 
 
@@ -360,7 +413,13 @@ def _run_schedule(
             rec.pop("Index", None)
             if row.status == STATUS_OK and not usable:
                 rec["status"] = STATUS_FAILED
-                rec["error"] = "VELEST output could not be parsed (no final model)"
+                parsed = getattr(row, "parsed", None)
+                why = getattr(parsed, "failure_reason", None)
+                rec["error"] = (
+                    f"VELEST run failed: {why}"
+                    if why
+                    else "VELEST output could not be parsed (no final model)"
+                )
             rec.update(
                 round=round_no, stage=st.name, stage_index=k, origin=e.origin, parent=e.parent
             )
@@ -547,6 +606,7 @@ def iterate_final_model(
     timeout: float | None = 3600.0,
     force: bool = False,
     vpvs: float | None = None,
+    freeze_station_delays: bool | None = None,
 ) -> IterationResults:
     """Repeat VELEST from its own outputs until the changes are negligible.
 
@@ -568,6 +628,17 @@ def iterate_final_model(
     vpvs
         Vp/Vs ratio for ``nsp = 3`` runs (default: the ratio of a ``TrialModel``, else the
         control's).
+    freeze_station_delays
+        Hold the station delays fixed (``nsinv = 0``) at the values handed on from the
+        previous cycle.  Default (``None``): frozen for ``nsp = 3`` whenever delays are
+        available, inverted otherwise.  With ``nsp = 3`` VELEST applies the S delay
+        ``ptcor * vpvs`` but gives S readings no delay partials, so inverting delays while S
+        data are used is internally inconsistent: the RMS climbs for tens of iterations,
+        successive cycles drift (layers collapse towards ~3 km/s) and some runs end with a
+        NaN RMS.  Feeding the delays back is not the problem (the next cycle starts at the
+        previous RMS); re-inverting them is.  The delays of the damped stage run are the
+        ones estimated; freezing them makes the repeat cycles refine velocities and
+        hypocentres only.
 
     Returns
     -------
@@ -602,6 +673,13 @@ def iterate_final_model(
         )
         mod = _model_path(cur, inp / f"{cid}.mod", inputs.control.nmod)
         ctrl = _stage_control(inputs.control, st, corr is not None, vpvs)
+        freeze = (
+            freeze_station_delays
+            if freeze_station_delays is not None
+            else (corr is not None and ctrl.nsp == 3)
+        )
+        if freeze:
+            ctrl.nsinv = 0
         job = VelestJob(cid, mod, ctrl, cnv, sta)
         df = run_jobs([job], rootp, n_jobs=1, timeout=timeout, force=force, progress=False)
         row = next(df.itertuples())
@@ -650,7 +728,10 @@ def iterate_final_model(
     rms_ok = results.history["rms"].dropna()
     if len(rms_ok):
         results.best_cycle = int(results.history.loc[rms_ok.idxmin(), "cycle"])
-        if results.best_cycle != len(results.history):
+        last_rms = float(results.history["rms"].iloc[-1])
+        if results.best_cycle != len(results.history) and not (
+            last_rms <= float(rms_ok.min()) * 1.01  # within 1 %: not a drift
+        ):
             logger.warning(
                 "iterate: RMS is lowest in cycle %d, not the last (%d); VELEST returns its "
                 "last accepted model, so later cycles drifted - use that cycle's model",

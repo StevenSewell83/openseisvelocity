@@ -62,6 +62,17 @@ All references below were verified in the vendored sources / manuals:
     `4517`) and S readings give no station-delay partials (`velest.f:4100`). `vpvs` is read
     list-directed from the control line. Velocity changes of the P model are therefore
     constrained by P and S together, with the ratio held fixed.
+  * **Station delays with `nsp = 3` (osv-iu9.9)**: S rays get no delay partials
+    (`velest.f:4100`) although their residual contains `ptcor * vpvs`, so inverting delays
+    with S data weighted is inconsistent: on the Ngatamariki data the RMS of a stage-2 run
+    rises 0.0885 -> 0.0916 over 10 iterations before the step damping relaxes, while the same
+    run with `nsinv = 0` falls monotonically (0.0885 -> 0.0764), with `swtfac = 0.01` it is
+    smooth, and with `nsp = 1` too. Re-inverting handed-on delays in the repeat loop made
+    cycles drift (RMS 0.072 -> 0.080 -> 0.084, layers towards ~3.1 km/s, then NaN RMS);
+    the hand-off is exact (next cycle starts at the previous RMS, reference station stays 0).
+    `iterate_final_model` therefore freezes the delays (`nsinv = 0`) for `nsp = 3`
+    (`freeze_station_delays`); `DampingStage.invert_station_delays` does the same per stage.
+    Delays are written in the `f5.2` station-file format (0.01 s rounding).
   * `swtfac` multiplies the weight of S (and S-P) observations
     (`w = swtfac / 2**(2*ipwt)`, `velest.f:2077`, `2106`, `5782`); it is used for `nsp = 2`
     and `3` alike and does nothing when S picks are dropped (`nsp = 1`).

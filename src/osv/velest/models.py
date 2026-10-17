@@ -139,6 +139,17 @@ def _s_bounds(cfg: VelestConfig, vp_bounds: np.ndarray) -> np.ndarray:
     return np.column_stack([vp_bounds[:, 0] / r_hi, vp_bounds[:, 1] / r_lo])
 
 
+def _fixed_ratio(cfg: VelestConfig) -> float:
+    """Vp/Vs of mode ``fixed``; ``'wadati'`` must have been resolved to a number first."""
+    v = cfg.vpvs.value
+    if isinstance(v, str):
+        raise ValueError(
+            "velest.vpvs.value is 'wadati': resolve it with osv.velest.workflow.resolve_vpvs "
+            "and set a number before generating trial models"
+        )
+    return float(v)
+
+
 def generate_trial_models(cfg: VelestConfig, seed: int) -> list[TrialModel]:
     """Generate the Monte Carlo trial models.
 
@@ -177,7 +188,7 @@ def generate_trial_models(cfg: VelestConfig, seed: int) -> list[TrialModel]:
     u = _unit_samples(cfg.sampler, n, nl + extra, seed)
     vp = _map_unit(u[:, :nl], vp_b, cfg.monotonic, "vp_bounds")
     if mode == "fixed":
-        vs = vp / cfg.vpvs.value
+        vs = vp / _fixed_ratio(cfg)
     elif mode == "sampled":
         r_lo, r_hi = cfg.vpvs.range
         vs = vp / (r_lo + u[:, nl : nl + 1] * (r_hi - r_lo))
@@ -189,7 +200,7 @@ def generate_trial_models(cfg: VelestConfig, seed: int) -> list[TrialModel]:
     if cfg.include_reference_model:
         vp0 = vp_eff.mean(axis=1)
         if mode == "fixed":
-            vs0 = vp0 / cfg.vpvs.value
+            vs0 = vp0 / _fixed_ratio(cfg)
         elif mode == "sampled":
             vs0 = vp0 / float(np.mean(cfg.vpvs.range))
         else:

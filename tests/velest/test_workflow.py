@@ -21,9 +21,12 @@ from osv.io.velest import (
 from osv.tools import ToolNotFoundError
 from osv.velest.models import TrialModel, generate_trial_models
 from osv.velest.workflow import (
+    VpVsResolutionError,
+    _stage_control,
     iterate_final_model,
     perturb_model,
     resolve_stages,
+    resolve_vpvs,
     run_mc_workflow,
     select_seeds,
 )
@@ -47,10 +50,11 @@ def _fake_read_run_dir(path, **kwargs):
     d = Path(path)
     n = (d / "events.cnv").read_text().count("x\n")
     delta = 0.4 / 4**n
-    model = read_model(d / "model.mod", nmod=2)
-    for blk in (model.p, model.s):
-        blk.layers["vel"] = blk.layers["vel"] + delta
     ctrl = read_control(d / "velest.cmn")
+    model = read_model(d / "model.mod", nmod=ctrl.nmod)
+    for blk in (model.p, model.s):
+        if blk is not None:
+            blk.layers["vel"] = blk.layers["vel"] + delta
     sta = read_stations(d / "stations.sta")
     base = sta["ptcor"].to_numpy() if ctrl.iusestacorr else np.zeros(len(sta))
     corr = pd.DataFrame({"sta": sta["sta"], "ptcor": base + 0.1, "stcor": base * 2 + 0.2})
@@ -277,6 +281,75 @@ def test_iterate_terminates_on_convergence(dummy, inputs, tmp_path):
     assert (tmp_path / "it/iterate/convergence.csv").is_file()
 
 
+def _nsinv(root: Path) -> list[int]:
+    return [read_control(d / "velest.cmn").nsinv for d in sorted((root / "iterate").glob("cycle*"))]
+
+
+def test_iterate_freezes_delays_for_nsp3_only(dummy, inputs, tmp_path):
+    """nsp=3: S delay = ptcor*vpvs without S partials, so handed-on delays are not re-inverted."""
+    cfg = _cfg()
+    cfg.iterate_until.max_cycles = 2
+    model = generate_trial_models(cfg, 1)[0]
+    iterate_final_model(model, inputs, cfg, tmp_path / "nsp2")
+    assert _nsinv(tmp_path / "nsp2") == [1, 1]
+    inputs.control.nsp, inputs.control.nmod = 3, 1
+    inputs.control.vpvs = 1.75
+    iterate_final_model(model, inputs, cfg, tmp_path / "nsp3")
+    assert _nsinv(tmp_path / "nsp3") == [1, 0]  # cycle 1 has no delays yet
+    iterate_final_model(model, inputs, cfg, tmp_path / "nsp3c", corrections=_corr())
+    assert _nsinv(tmp_path / "nsp3c") == [0, 0]
+    iterate_final_model(
+        model, inputs, cfg, tmp_path / "nsp3i", corrections=_corr(), freeze_station_delays=False
+    )
+    assert _nsinv(tmp_path / "nsp3i") == [1, 1]
+
+
+def _corr() -> pd.DataFrame:
+    return pd.DataFrame({"sta": ["AAA", "BBB"], "ptcor": [0.1, 0.0], "stcor": [0.0, 0.0]})
+
+
+def test_stage_invert_station_delays_option():
+    base = VelestControl(neqs=2, phasefile="a", stationfile="b")
+    assert base.nsinv == 1
+    st = resolve_stages(_cfg(stages=[DampingStage(name="s")]))[0]
+    assert _stage_control(base, st, False).nsinv == 1
+    assert (
+        _stage_control(base, st.model_copy(update={"invert_station_delays": False}), False).nsinv
+        == 0
+    )
+
+
+def test_resolve_vpvs(tmp_path):
+    import json
+
+    cfg = _cfg()
+    assert resolve_vpvs(cfg, tmp_path) == 1.75  # numeric: unchanged, no file needed
+    cfg.vpvs.value = "wadati"
+    with pytest.raises(VpVsResolutionError, match="does not exist"):
+        resolve_vpvs(cfg, tmp_path)
+    (tmp_path / "wadati.json").write_text(json.dumps({}))
+    with pytest.raises(VpVsResolutionError, match="unusable"):
+        resolve_vpvs(cfg, tmp_path)
+    (tmp_path / "wadati.json").write_text(json.dumps({"vpvs": 0.9}))
+    with pytest.raises(VpVsResolutionError, match="unusable"):
+        resolve_vpvs(cfg, tmp_path)
+    (tmp_path / "wadati.json").write_text("not json")
+    with pytest.raises(VpVsResolutionError, match="cannot read"):
+        resolve_vpvs(cfg, tmp_path)
+    (tmp_path / "wadati.json").write_text(json.dumps({"vpvs": 1.7312, "n_pairs": 10}))
+    assert resolve_vpvs(cfg, tmp_path) == pytest.approx(1.7312)
+    assert resolve_vpvs(OSVConfig(velest=cfg), tmp_path) == pytest.approx(1.7312)  # full config
+
+
+def test_wadati_value_schema_and_unresolved_guard():
+    cfg = OSVConfig.model_validate({"velest": {"vpvs": {"value": "wadati"}}})
+    assert cfg.velest.vpvs.value == "wadati"
+    with pytest.raises(ValueError, match="resolve"):
+        generate_trial_models(cfg.velest, 1)
+    with pytest.raises(ValueError):
+        OSVConfig.model_validate({"velest": {"vpvs": {"value": "other"}}})
+
+
 def test_iterate_stops_at_max_cycles(dummy, inputs, tmp_path):
     cfg = _cfg()
     cfg.iterate_until.max_cycles = 2
@@ -353,9 +426,18 @@ def test_real_two_stage_and_iterate(tmp_path):
     cols = ["round", "stage_index", "id", "status", "initial_rms", "final_rms", "n_iterations"]
     print(res.history[cols].to_string())
     print(res.history.groupby(["round", "stage_index"])["final_rms"].describe().to_string())
-    assert (res.history["status"] == "ok").all(), res.history[res.history["status"] != "ok"]
-    assert len(res.runs[res.runs["round"] == 2]) == 6
-    best = res.runs.sort_values("final_rms").iloc[0]
+    # round 1 (stages 1-2 of the 12 Latin-hypercube models) must all work; reseeded perturbed
+    # models may fail individually (VELEST can produce a NaN RMS for one event, see osv-iu9.9)
+    h = res.history
+    assert (h[h["round"] == 1]["status"] == "ok").all()
+    r2 = res.runs[res.runs["round"] == 2]
+    assert len(r2) == 6
+    assert (r2["status"] == "ok").sum() >= 4, r2[["id", "status", "error"]]
+    bad = res.runs[res.runs["status"] != "ok"]
+    assert bad["error"].map(lambda e: isinstance(e, str) and len(e) > 0).all()
+    assert set(bad["id"]) == set(h[h["status"] != "ok"]["id"])
+    ok = res.runs[res.runs["status"] == "ok"]
+    best = ok.sort_values("final_rms").iloc[0]
     out = iterate_final_model(
         res.final_models[best["id"]],
         vi,
@@ -365,4 +447,10 @@ def test_real_two_stage_and_iterate(tmp_path):
         corrections=best["parsed"].station_corrections,
     )
     print(out.history.to_string())
-    assert len(out) >= 1
+    # delays are handed on frozen (nsp=3): every cycle runs, the RMS stays at the stage-2 level
+    assert len(out) == len(out.history) >= 2
+    rms = out.history["rms"]
+    assert rms.notna().all() and rms.max() <= best["final_rms"] * 1.05
+    assert out.history["model_change_km_s"].iloc[-1] < out.history["model_change_km_s"].iloc[0]
+    vp = out[-1].final_model.p.layers["vel"]
+    assert vp.min() > 1.0 and vp.iloc[-1] > 5.0  # no collapse towards ~3 km/s
