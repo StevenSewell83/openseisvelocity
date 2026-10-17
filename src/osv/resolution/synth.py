@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -57,6 +58,9 @@ from osv.model3d.grid import ModelGrid
 from osv.resolution.models import write_vgrids
 
 log = logging.getLogger(__name__)
+
+#: HDF5/netCDF4 is not thread-safe: serialise NetCDF writes of concurrently running tests
+NETCDF_LOCK = threading.Lock()
 
 __all__ = [
     "BaseInputs",
@@ -300,7 +304,8 @@ def make_synthetic_data(
 
     # ---- true model and times
     true_path = work / "true_model.nc"
-    true_model.to_netcdf(true_path)
+    with NETCDF_LOCK:
+        true_model.to_netcdf(true_path)
     calc = forward_times(
         true_model, grid, base_inputs, work / "fm3d_true", n_jobs=n_jobs, phase=phase
     )
