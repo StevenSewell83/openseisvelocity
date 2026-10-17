@@ -439,6 +439,8 @@ def _hypocentres_of(parsed: Any) -> pd.DataFrame:
                 "rms": ev["rms"].to_numpy(float) if "rms" in ev else np.nan,
             }
         )
+        if "time" in ev:  # relocated origin time (osv-jac.13)
+            out.insert(1, "time", ev["time"].to_numpy())
         return out
     fh = getattr(parsed, "final_hypocentres", None)
     if fh is not None and len(fh):

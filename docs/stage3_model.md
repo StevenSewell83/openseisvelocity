@@ -59,6 +59,24 @@ through the background; a change of RMS above 2% is called `better` or `worse`. 
 default, so it is expected to be larger. The mean P residual per station should follow the VELEST
 delays (correlation in the report).
 
+### Origin times and the 1-D extrusion (osv-jac.13)
+
+- `final_hypocentres.parquet` (Stage 2) must carry VELEST's **relocated** origin time in `time`
+  (the catalogue time is `time0`). It used to carry the catalogue time, so every travel time was
+  too long by the relocation's origin shift (mean 0.075 s on rk-nm-2017), a +0.075 s bias in the
+  forward check. A Stage 2 output from before the fix must be regenerated (or `time` replaced by the
+  `velout.cnv` origin times of the fixed-model run).
+- The VELEST layers are constant-velocity slabs, so the default extrusion is `layered`
+  (`model3d.extrusion.mode`). `gradient` (linear between layer mid-depths) does not preserve the
+  layer average over the thick slow top layer and is about 0.02 s faster in P time for the
+  near-station rays. FMTOMO's cubic B-spline of the 0.5 km nodes smears each velocity step over about
+  one node, which makes the model slightly faster than VELEST's exact layers: on rk-nm-2017 the same
+  picks give a mean P residual of +0.043 s (`dz_km` 0.5) against +0.010 s (`dz_km` 0.1), a
+  constant offset that the relocation of the origin times absorbs (event-demeaned RMS 0.035 s).
+- With the station delays applied (default) the per-station mean residuals are what is left after
+  the delays, so the reported correlation with the VELEST delays is expected to be low; it only
+  tests the delays when `apply_velest_station_delays` is off.
+
 ## Figures
 
 Vp and dVp depth slices, E-W, N-S and configured cross sections (with stations, events and surface),

@@ -73,7 +73,7 @@ def box_user_grid(grid, vp=5.0, vs=None, lat_frac=(0.0, 0.5), depth_from=1.0):
 # ---------------------------------------------------------------------------------------
 def test_velest_1d_mode(grid):
     sm = build_starting_model(grid, make_cfg(), MODEL)
-    ref = extrude_1d(MODEL, grid, "gradient")
+    ref = extrude_1d(MODEL, grid, make_cfg().extrusion.mode)
     np.testing.assert_allclose(sm.dataset.vp, ref.vp)
     np.testing.assert_allclose(sm.dataset.vs, ref.vs)
     assert float(sm.dataset.weight.max()) == 0.0

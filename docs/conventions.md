@@ -174,3 +174,11 @@ the wrong hemisphere relative to the origin.
 * `grid3dg.f90:181` skips 29 records before the second (type 2) velocity pass whereas the
   shipped `grid3dg.in` layout needs 31, so `n_vtypes = 2` does not work with the shipped template
   without fixing the code (Extras `grid3dgi.f90:183` skips 32).
+
+## VELEST station delays and origin times (osv-jac.13)
+
+VELEST adds the delay to the calculated time: `res = t_obs - t_calc - ptcor` (`velest.f:2765`), so
+`t_obs - ptcor` is the time that the bare 1-D model predicts; Stage 3 subtracts `ptcor`. The delays
+are relative to the reference station and are consistent only with the origin times and hypocentres
+of the *same* VELEST run. `final_hypocentres.parquet` `time` is the relocated origin time from the
+fixed-model run (`velout.cnv`); `time0` is the catalogue time.

@@ -21,7 +21,8 @@
     ``station_delays.csv``
         ``sta, alias, lat, lon, elevation, ptcor, stcor`` (+ ``nobs``) from the fixed-model run.
     ``final_hypocentres.parquet``
-        Relocated hypocentres of the fixed-model run with the Stage 1 ``event_id``.
+        Relocated hypocentres of the fixed-model run with the Stage 1 ``event_id``; ``time`` is the
+        relocated origin time (``time0``: catalogue time).
     ``summary.json``
         Headline numbers and QC findings.
 
@@ -212,7 +213,15 @@ def _final_hypocentres(fixed: FixedModelResult, event_map: pd.DataFrame) -> pd.D
     h = fixed.hypocentres.copy()
     h.insert(0, "cnv_id", h["event"].astype(int) + 1)  # parsed events are 0-based
     h = h.drop(columns="event")
-    em = event_map.rename(columns={"lat": "lat0", "lon": "lon0", "depth_km": "depth0_km"})
+    if "time" not in h.columns:
+        raise ValueError(
+            "the fixed-model run has no relocated origin times (velout.cnv missing); Stage 3 "
+            "needs them (osv-jac.13)"
+        )
+    # ``time`` is VELEST's relocated origin time; the catalogue time is kept as ``time0``.
+    em = event_map.rename(
+        columns={"lat": "lat0", "lon": "lon0", "depth_km": "depth0_km", "time": "time0"}
+    )
     keep = [c for c in em.columns if c not in h.columns or c == "cnv_id"]
     out = h.merge(em[keep], on="cnv_id", how="left")
     cos = np.cos(np.radians(out["lat0"]))

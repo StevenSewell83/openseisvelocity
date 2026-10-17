@@ -125,3 +125,44 @@ def test_stage2_end_to_end(tmp_path, restore_stage_registry):
     # unchanged: both skipped; the pipeline reaches velest_analyse
     out = stages.run_pipeline(cfg, to="velest_analyse")
     assert set(out.values()) == {"skipped"}
+
+
+def test_final_hypocentres_carry_relocated_origin_time() -> None:
+    """osv-jac.13: ``time`` is VELEST's relocated origin time, not the catalogue time."""
+    from types import SimpleNamespace
+
+    from osv.velest import stability
+    from osv.velest.stage import _final_hypocentres
+
+    cat = pd.Timestamp("2017-04-09 05:41:58.38")
+    reloc = pd.Timestamp("2017-04-09 05:41:58.45")
+    cnv = SimpleNamespace(
+        events=pd.DataFrame(
+            {
+                "event": [0],
+                "time": [reloc],
+                "lat": [-38.5],
+                "lon": [176.2],
+                "depth_km": [3.3],
+                "mag": [0.0],
+                "gap": [47],
+                "rms": [0.05],
+            }
+        )
+    )
+    hyp = stability._hypocentres_of(SimpleNamespace(cnv=cnv))
+    em = pd.DataFrame(
+        {
+            "cnv_id": [1],
+            "event_id": ["e1"],
+            "time": [cat],
+            "lat": [-38.51],
+            "lon": [176.19],
+            "depth_km": [3.2],
+        }
+    )
+    out = _final_hypocentres(SimpleNamespace(hypocentres=hyp), em)
+    assert out["time"].iloc[0] == reloc
+    assert out["time0"].iloc[0] == cat
+    with pytest.raises(ValueError, match="origin times"):
+        _final_hypocentres(SimpleNamespace(hypocentres=hyp.drop(columns="time")), em)

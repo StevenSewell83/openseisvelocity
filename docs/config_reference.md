@@ -275,7 +275,7 @@ Inversion grid geometry.
 
 | Key | Type | Default | Allowed / constraints | Description |
 |---|---|---|---|---|
-| `mode` | string | `gradient` | `gradient` \| `layered` | 'layered': constant-velocity steps at the layer tops; 'gradient': linear interpolation between layer mid-depths. |
+| `mode` | string | `layered` | `gradient` \| `layered` | 'layered': constant-velocity steps at the layer tops (what VELEST traces; FMTOMO's B-spline smooths the steps over ~1 node); 'gradient': linear interpolation between layer mid-depths, which makes the thick slow top layer ~0.05 s too fast (rk-nm-2017: mean P residual 0.045 s vs 0.043 s layered, demeaned RMS 0.042 vs 0.035 s). |
 | `smoothing_km` | number | `0.0` | >= 0 | Gaussian smoothing length (sigma) along depth for mode 'layered', km. |
 
 #### `model3d.extrusion.uncertainty`
