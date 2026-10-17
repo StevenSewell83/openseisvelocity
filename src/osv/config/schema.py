@@ -359,6 +359,76 @@ class VelestSelect(_Base):
         return self
 
 
+class DampingStage(_Base):
+    """One stage of the VELEST damping schedule (Kissling et al. 1994).
+
+    Fields left ``None`` inherit the corresponding top-level ``velest`` setting
+    (``damping.*``, ``ittmax``, ``invertratio``), so the last stage normally runs with the
+    user's damping.
+    """
+
+    name: str = F("stage", "Stage name (used in logs and the history table).", min_length=1)
+    othet: float | None = F(None, "Origin-time damping (None: velest.damping.othet).", ge=0)
+    xythet: float | None = F(None, "Epicentre damping (None: velest.damping.xythet).", ge=0)
+    zthet: float | None = F(None, "Depth damping (None: velest.damping.zthet).", ge=0)
+    vthet: float | None = F(None, "Velocity damping (None: velest.damping.vthet).", ge=0)
+    stathet: float | None = F(
+        None, "Station-correction damping (None: velest.damping.stathet).", ge=0
+    )
+    ittmax: int | None = F(None, "Iterations of this stage (None: velest.ittmax).", ge=1)
+    invertratio: int | None = F(
+        None, "VELEST 'invertratio' of this stage (None: velest.invertratio).", ge=0
+    )
+    use_previous_hypocentres: bool = F(
+        True, "Start from the previous stage's relocated hypocentres (velout.cnv)."
+    )
+    use_previous_station_corrections: bool = F(
+        True,
+        "Start from the previous stage's station delays (written to the stage's station "
+        "file; sets iusestacorr = 1 so VELEST reads them).",
+    )
+
+
+def _default_stages() -> list[DampingStage]:
+    return [
+        DampingStage(name="stage1_high_damping", vthet=10.0, stathet=1.0),
+        DampingStage(name="stage2_final"),
+    ]
+
+
+class ReseedConfig(_Base):
+    """Second-round Monte Carlo started from the best models of the previous round."""
+
+    enabled: bool = F(False, "Run reseeded rounds after the first Monte Carlo round.")
+    best_percent: float = F(
+        10.0, "Percent of the previous round's converged models (lowest RMS) used as seeds.",
+        gt=0, le=100,
+    )  # fmt: skip
+    n_rounds: int = F(1, "Number of additional (reseeded) rounds.", ge=1)
+    perturb_vp_km_s: float = F(
+        0.1, "Standard deviation (km/s) of the Gaussian Vp perturbation of each seed model "
+        "(Vs follows with the seed's Vp/Vs); 0 reuses the seeds unchanged.", ge=0,
+    )  # fmt: skip
+    n_copies: int = F(
+        0,
+        "Perturbed copies per seed model; 0 chooses round(100 / best_percent) so the round "
+        "has about as many models as the first.",
+        ge=0,
+    )
+    inherit_hypocentres: bool = F(True, "Seeds start from their own relocated hypocentres.")
+    inherit_station_corrections: bool = F(True, "Seeds start from their own station delays.")
+
+
+class IterateUntilConfig(_Base):
+    """Kissling repeat-until-stable loop on the final model."""
+
+    max_cycles: int = F(5, "Maximum number of repeated VELEST runs (0 disables the loop).", ge=0)
+    model_change_km_s: float = F(
+        0.02, "Stop when the largest layer velocity change is below this (km/s).", gt=0
+    )
+    hypo_change_km: float = F(0.1, "Stop when the mean hypocentre shift is below this (km).", gt=0)
+
+
 class VelestConfig(_Base):
     """VELEST Monte Carlo 1-D inversion (Stage 2)."""
 
@@ -399,9 +469,22 @@ class VelestConfig(_Base):
         1, "VELEST 'invertratio': invert for velocities every N-th iteration.", ge=0
     )
     select: VelestSelect = FF(VelestSelect, "Selection of the preferred model from the ensemble.")
+    stages: list[DampingStage] = Field(
+        default_factory=_default_stages,
+        description="Damping schedule run sequentially for every trial model; each stage "
+        "starts from the previous stage's model (and optionally hypocentres and station "
+        "delays). An empty list runs a single stage with the top-level damping.",
+    )
+    reseed: ReseedConfig = FF(ReseedConfig, "Reseeded rounds from the best models.")
+    iterate_until: IterateUntilConfig = FF(
+        IterateUntilConfig, "Repeat VELEST on the final model until changes are negligible."
+    )
 
     @model_validator(mode="after")
     def _check(self) -> VelestConfig:
+        names = [st.name for st in self.stages]
+        if len(set(names)) != len(names):
+            raise ValueError("stages: stage names must be unique")
         tops = self.layers_top_km
         if any(b <= a for a, b in zip(tops, tops[1:], strict=False)):
             raise ValueError("layers_top_km: must be strictly increasing")
