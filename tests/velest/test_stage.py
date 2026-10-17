@@ -56,7 +56,7 @@ def _config(tmp_path: Path) -> Path:
     return path
 
 
-def test_stage2_end_to_end(tmp_path):
+def test_stage2_end_to_end(tmp_path, restore_stage_registry):
     from typer.testing import CliRunner
 
     from osv.cli import app

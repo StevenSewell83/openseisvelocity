@@ -119,7 +119,8 @@ class PrepStage(Stage):
 
     def inputs(self, ctx: StageContext) -> list[Path]:
         inp = ctx.config.inputs
-        return [Path(p) for p in (*inp.quakeml, *inp.stationxml)]
+        extra = [inp.station_aliases] if isinstance(inp.station_aliases, Path) else []
+        return [Path(p) for p in (*inp.quakeml, *inp.stationxml, *extra)]
 
     # ------------------------------------------------------------------ run
 
@@ -127,7 +128,12 @@ class PrepStage(Stage):
         cfg = ctx.config
         log = ctx.logger
         cat = read_catalog(cfg.inputs.quakeml, cfg.inputs, cfg.data_selection)
-        sta = read_stations(cfg.inputs.stationxml, cfg.inputs, cfg.coordinates)
+        sta = read_stations(
+            cfg.inputs.stationxml,
+            cfg.inputs,
+            cfg.coordinates,
+            aliases=cfg.inputs.station_aliases,  # 'auto', mapping or resolved CSV path
+        )
         log.info(
             "Read %d events, %d picks, %d station epochs",
             len(cat.events),

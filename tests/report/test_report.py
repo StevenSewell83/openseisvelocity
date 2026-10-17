@@ -45,9 +45,8 @@ def cfg(tmp_path: Path):
 
 
 @pytest.fixture(autouse=True)
-def _reg():
-    yield
-    stages.unregister("prep")
+def _reg(restore_stage_registry):
+    """Tests here register dummy stages; restore the real registry afterwards."""
 
 
 def test_headless_backend():
