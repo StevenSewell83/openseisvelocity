@@ -1225,6 +1225,29 @@ class PlottingConfig(_Base):
     )
 
 
+class ValidationConfig(_Base):
+    """Validation relocation of the held-out events (Stage 7)."""
+
+    enabled: bool = F(True, "Run the validation relocation (needs events with split 'validation').")
+    max_iterations: int = F(5, "Gauss-Newton iterations of the 3-D relocation.", ge=1)
+    n_jobs: int | None = F(None, "Parallel fm3d processes (None: project.n_jobs, at most 8).", ge=1)
+    use_s: bool | None = F(
+        None, "Use S picks as well as P (None: when fmtomo.phases has S).", example="false"
+    )
+    source_sigma_km: float = F(2.0, "A priori hypocentre standard deviation (damping), km.", gt=0)
+    velest_ittmax: int = F(20, "VELEST iterations per event for the 1-D relocation.", ge=1)
+    worse_fraction_warn: float = F(
+        0.5, "Warn when 3-D fits worse than 1-D for more than this fraction of events.", ge=0, le=1
+    )
+    min_events_stat: int = F(
+        6, "Fewer paired events than this makes the statistical test informational.", ge=1
+    )
+    improve_tol_ms: float = F(0.5, "RMS changes below this (ms) count as a tie.", ge=0)
+    max_hypo_shift_warn_km: float = F(
+        5.0, "Warn when the 1-D to 3-D hypocentre shift exceeds this (km).", gt=0
+    )
+
+
 # ---------------------------------------------------------------------------
 # top level
 # ---------------------------------------------------------------------------
@@ -1243,4 +1266,5 @@ class OSVConfig(_Base):
     model3d: Model3DConfig = FF(Model3DConfig, "3-D starting model (Stage 3).")
     fmtomo: FmtomoConfig = FF(FmtomoConfig, "FMTOMO inversion (Stage 4).")
     resolution: ResolutionConfig = FF(ResolutionConfig, "Resolution tests (Stage 6).")
+    validation: ValidationConfig = FF(ValidationConfig, "Validation relocation (Stage 7).")
     plotting: PlottingConfig = FF(PlottingConfig, "Figure settings.")
