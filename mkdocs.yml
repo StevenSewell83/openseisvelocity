@@ -1,0 +1,50 @@
+site_name: openSeisVelocity
+site_description: Earthquake-based velocity inversion workflow wrapping VELEST and FMTOMO
+docs_dir: docs
+strict: true
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - toc.follow
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+nav:
+  - Home: index.md
+  - Installation: install.md
+  - Tutorial: tutorial.md
+  - Stages:
+      - "1. Data preparation": stage1_prep.md
+      - "2. Monte Carlo VELEST": stage2_velest.md
+      - "3. Starting model": stage3_model.md
+      - "4. Trade-off and inversion": stage4_fmtomo.md
+      - "5. Analysis": stage5_analysis.md
+      - "6. Resolution tests": stage6_resolution.md
+      - "7. Validation": stage7_validation.md
+  - User models: user_models.md
+  - Conventions: conventions.md
+  - Configuration reference: config_reference.md
+  - Containers: containers.md
+  - Reporting: reporting.md
+  - Troubleshooting: troubleshooting.md
+  - Developer guide: developer.md

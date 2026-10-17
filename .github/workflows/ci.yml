@@ -38,6 +38,18 @@ jobs:
       - run: ruff format --check src tests
         continue-on-error: true   # advisory until the code base is formatted
 
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[docs]"
+      - run: python scripts/gen_config_reference.py --check
+      - run: mkdocs build --strict
+
   unit:
     runs-on: ubuntu-latest
     timeout-minutes: 25
