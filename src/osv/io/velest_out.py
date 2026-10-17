@@ -168,7 +168,11 @@ _RE_STEP = re.compile(r"\(Applied\) Step length =\s*(\S+)")
 _RE_DAMP = re.compile(r"Step length damping of\s*(\S+)\s+was applied")
 _RE_CONSTR = re.compile(r"\*{5} depth constrained for event")
 _RE_AVG = re.compile(r"A V E R A G E\s+of\s+(ABSOLUTE\s+)?ADJUSTMENTS\s*:(.*)$")
-_RE_READ = re.compile(r"readings for station\s+(\S+)\s*:\s*tot=\s*(\d+)\s+P:\s*(\d+)\s+S:\s*(\d+)")
+# velest.f 5948-5957: ``tot= P: S:`` is printed only for nsp=2; every other nsp prints just
+# `` readings for station XXXX :  NNN`` (the total).
+_RE_READ = re.compile(
+    r"readings for station\s+(\S+)\s*:\s*(?:tot=\s*(\d+)\s+P:\s*(\d+)\s+S:\s*(\d+)|(\d+)\s*$)"
+)
 _RE_HYPO = re.compile(
     r"^\s*(\d+)\s+(\d{6})\s+(\d{4})\s+(\d+\.\d+)\s+(\d+\.\d+[NSns])\s*(\d+\.\d+[EWew])\s+"
     r"(-?\d+\.\d+)\s+(-?\d+\.\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s*$"
@@ -716,9 +720,14 @@ def _parse_into(res: VelestRunResult, lines: list[str]) -> None:  # noqa: C901
         m = _RE_READ.search(s)
         if m:
             c = readings.setdefault(m.group(1), [0, 0, 0])
-            c[0] += int(m.group(2))
-            c[1] += int(m.group(3))
-            c[2] += int(m.group(4))
+            if m.group(2) is not None:
+                c[0] += int(m.group(2))
+                c[1] += int(m.group(3))
+                c[2] += int(m.group(4))
+            else:  # total only (nsp != 2); a 4th element marks "P/S split unknown"
+                c[0] += int(m.group(5))
+                if len(c) == 3:
+                    c.append(-1)
             i += 1
             continue
         m = re.match(r"Total number of readings:\s*(\d+)", s)
@@ -1022,9 +1031,6 @@ def _finalise(  # noqa: C901
 
     # events / observations
     res.n_obs = sum(obs_totals) if obs_totals else (sum(read_totals) if read_totals else None)
-    if readings:
-        res.n_obs_p = sum(v[1] for v in readings.values())
-        res.n_obs_s = sum(v[2] for v in readings.values())
     if "neqs" in res.control:  # single-event mode prints neqs=1 for every event
         res.n_events = int(res.control["neqs"])
     elif res.n_events is None:
@@ -1038,6 +1044,9 @@ def _finalise(  # noqa: C901
         st = _empty(STATS_COLUMNS)
     res.station_stats = st.reset_index(drop=True)
     res.station_corrections = _station_corrections(sta_tables, readings, res.station_stats)
+    if readings and len(res.station_corrections):
+        res.n_obs_p = int(res.station_corrections["nobs_p"].sum())
+        res.n_obs_s = int(res.station_corrections["nobs_s"].sum())
 
     hyp = pd.DataFrame(hypo_rows)
     if len(hyp):
@@ -1119,10 +1128,57 @@ def _station_corrections(
     for c in ("ptcor", "stcor", "dptcor", "dstcor"):
         if c not in df:
             df[c] = math.nan
-    df["nobs_p"] = df["sta"].map(lambda s: readings.get(s, [0, 0, 0])[1]).astype("int64")
-    df["nobs_s"] = df["sta"].map(lambda s: readings.get(s, [0, 0, 0])[2]).astype("int64")
-    df["nobs"] = df["nobs_p"] + df["nobs_s"]
+    _fill_from_stats(df, stats)
+    _fill_counts(df, readings, stats)
     return df[STACORR_COLUMNS].reset_index(drop=True)
+
+
+def _fill_from_stats(df: pd.DataFrame, stats: pd.DataFrame) -> None:
+    """Fill ``ptcor``/``stcor`` still missing from the station statistics ``delay`` column.
+
+    With ``nsp=3`` VELEST prints no S station-correction table (only the P one); the S delay
+    is only available in the statistics (``velest.f`` 6150-6215).
+    """
+    if not len(stats):
+        return
+    for ph, col in (("P", "ptcor"), ("S", "stcor")):
+        sub = stats[stats["phase"] == ph].set_index("sta")["delay"]
+        if len(sub):
+            df[col] = df[col].fillna(df["sta"].map(sub))
+
+
+def _fill_counts(df: pd.DataFrame, readings: dict[str, list[int]], stats: pd.DataFrame) -> None:
+    """Set ``nobs_p``, ``nobs_s``, ``nobs`` per station.
+
+    ``readings for station`` lines carry P/S counts only for ``nsp=2`` (``velest.f``
+    5948-5957); otherwise the split is taken from the station statistics (``nobs`` per phase,
+    printed only when a station has at least two readings of that phase, 6062-6215) and the
+    total from the ``readings`` line: a phase missing from the statistics gets ``total`` minus
+    the other phase.  A station whose split cannot be recovered keeps 0 for both and only
+    ``nobs`` (the total).
+    """
+    cnt = {
+        (str(a), str(b)): int(n)
+        for a, b, n in zip(stats["sta"], stats["phase"], stats["nobs"], strict=True)
+    }
+    cols: dict[str, list[int]] = {"nobs_p": [], "nobs_s": [], "nobs": []}
+    for sta in df["sta"]:
+        r = readings.get(sta)
+        if r is not None and len(r) == 3:  # P/S printed explicitly (nsp=2)
+            p, s, tot = r[1], r[2], r[0]
+        else:
+            p0, s0 = cnt.get((sta, "P")), cnt.get((sta, "S"))
+            tot = r[0] if r is not None else (p0 or 0) + (s0 or 0)
+            if p0 is not None and s0 is None:
+                s0 = max(tot - p0, 0)
+            elif s0 is not None and p0 is None:
+                p0 = max(tot - s0, 0)
+            p, s = p0 or 0, s0 or 0
+        cols["nobs_p"].append(p)
+        cols["nobs_s"].append(s)
+        cols["nobs"].append(tot)
+    for k, v in cols.items():
+        df[k] = pd.Series(v, index=df.index, dtype="int64")
 
 
 def _resolution_table(res: VelestRunResult, sigma: list[float], rdiag: list[float]) -> pd.DataFrame:

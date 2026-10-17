@@ -355,3 +355,39 @@ def test_converged_flag_from_delmin_text() -> None:
     )
     r = parse_velest_out(t2)
     assert r.stop_reason == "delmin" and r.converged
+
+
+# ---- nsp=3: ``readings for station`` lines carry only the total (osv-8vx.19) ---------------
+
+
+@pytest.fixture(scope="module")
+def nsp3() -> VelestRunResult:
+    # real run, nsp=3, vpvs fixed at 1.72, nmod=1, ittmax=3 (velest.f 5948-5957 prints only
+    # the per-station total for nsp != 2; P/S counts are in the station statistics)
+    return read_run_dir(DATA / "nsp3")
+
+
+def test_nsp3_station_nobs(nsp3: VelestRunResult) -> None:
+    sc = nsp3.station_corrections.set_index("sta")
+    assert len(sc) == 63
+    assert (sc["nobs"] > 0).all()
+    assert sc["nobs"].sum() == 2514
+    # split unrecoverable only when both phases have < 2 readings (not in the statistics)
+    split = sc[sc["nobs_p"] + sc["nobs_s"] > 0]
+    assert (split["nobs_p"] + split["nobs_s"] == split["nobs"]).all()
+    assert len(sc) - len(split) <= 4
+    row = sc.loc["ALRZ"]
+    assert (row["nobs_p"], row["nobs_s"], row["nobs"]) == (39, 3, 42)
+    # S absent from the statistics (fewer than 2 readings): derived as total - P
+    assert (sc.loc["RT21", "nobs_p"], sc.loc["RT21", "nobs_s"]) == (36, 0)
+    assert (sc.loc["HRRZ", "nobs_p"], sc.loc["HRRZ", "nobs_s"]) == (5, 1)
+    assert nsp3.n_obs == 2514
+    assert 0 < nsp3.n_obs_p < nsp3.n_obs
+
+
+def test_nsp3_stcor_from_stats(nsp3: VelestRunResult) -> None:
+    sc = nsp3.station_corrections.set_index("sta")
+    st = nsp3.station_stats
+    s_delay = st[(st["sta"] == "ALRZ") & (st["phase"] == "S")]["delay"].iloc[0]
+    assert sc.loc["ALRZ", "stcor"] == pytest.approx(s_delay)
+    assert not math.isnan(sc.loc["ALRZ", "ptcor"])
