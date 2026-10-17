@@ -303,11 +303,19 @@ class VpVsConfig(_Base):
     )
     value: float = F(1.75, "Vp/Vs ratio for mode 'fixed'.", gt=1.0)
     range: Bounds = F((1.65, 1.85), "[min, max] Vp/Vs for mode 'sampled'.")
+    s_bounds: list[Bounds] | None = F(
+        None,
+        "[lower, upper] Vs bounds in km/s per layer for mode 'independent_s_model' (same "
+        "length as layers_top_km). Default: derived from vp_bounds and 'range' "
+        "(lower/range[1], upper/range[0]).",
+    )
 
     @model_validator(mode="after")
     def _check(self) -> VpVsConfig:
         if self.range[0] <= 1.0:
             raise ValueError("range: Vp/Vs must be > 1")
+        if self.s_bounds is not None and any(lo <= 0 or hi < lo for lo, hi in self.s_bounds):
+            raise ValueError("s_bounds: need 0 < lower <= upper for every layer")
         return self
 
 
@@ -376,6 +384,9 @@ class VelestConfig(_Base):
     vpvs: VpVsConfig = FF(VpVsConfig, "Vp/Vs treatment.")
     monotonic: bool = F(True, "Require Vp to be non-decreasing with depth in trial models.")
     n_models: int = F(1000, "Number of Monte Carlo trial models.", ge=1)
+    include_reference_model: bool = F(
+        True, "Also write the mid-bounds reference model as trial 'MC_0000'."
+    )
     sampler: Literal["latin_hypercube", "sobol", "uniform"] = F(
         "latin_hypercube", "Sampling scheme for trial velocity models."
     )
@@ -400,6 +411,11 @@ class VelestConfig(_Base):
             )
         if any(lo <= 0 for lo, _ in self.vp_bounds):
             raise ValueError("vp_bounds: velocities must be > 0")
+        if self.vpvs.s_bounds is not None and len(self.vpvs.s_bounds) != len(tops):
+            raise ValueError(
+                f"vpvs.s_bounds: has {len(self.vpvs.s_bounds)} entries but layers_top_km "
+                f"has {len(tops)}"
+            )
         if self.monotonic:
             for i in range(1, len(self.vp_bounds)):
                 if self.vp_bounds[i][1] < self.vp_bounds[i - 1][0]:

@@ -1,0 +1,290 @@
+# openSeisVelocity configuration.
+# All settings are validated when loaded; unknown keys are errors.
+# Relative paths are resolved against the directory containing this file.
+# ${VAR} and ${VAR:-default} are expanded from the environment.
+
+# Project identity and run-wide settings.
+project:
+  # Short project name (letters, digits, '.', '_', '-').
+  name: rk-nm-2017
+  # Directory under which numbered stage directories are created.
+  workdir: runs
+  # Parallel worker processes; -1 uses all CPU cores.
+  n_jobs: -1
+  # Seed for all random number generators (reproducibility).
+  random_seed: 42
+
+# Input data files and how to read them.
+inputs:
+  # StationXML files; entries may be glob patterns (expanded by the loader).
+  stationxml: [/home/steve/seismic/Station_Files/*_STATIONXML.xml]
+  # QuakeML catalogue files; entries may be glob patterns.
+  quakeml: [../../manual_only_catalog.xml]
+  # Which origin to use per event: 'preferred', 'latest' or 'by_method:<method id>'.
+  origin_selection: preferred
+  # Keep picks with this evaluation mode ('any' keeps all, including unset).
+  # Allowed: any | manual | automatic
+  evaluation_mode: any
+  # Build travel times from arrivals instead of picks. Keep false when the catalogue's arrivals
+  # may be corrupted or duplicated.
+  use_arrivals: false
+  # Where pick weights come from: the pick time uncertainty, a 'wgt = x' comment, or both.
+  # Allowed: uncertainty | comment | both
+  weight_source: uncertainty
+  # VELEST needs station codes of at most 4 characters: 'auto' generates aliases, or give an
+  # explicit {code: alias} mapping.
+  # Allowed: auto
+  station_aliases: auto
+  # Optional GeoTIFF DEM used for the surface interface.
+  dem: null
+
+# Coordinate system.
+coordinates:
+  # Local-system origin; null uses the centroid of the stations.
+  origin: {lat: -38.55, lon: 176.194}
+  # 'local_tm' (transverse Mercator about the origin) or an EPSG code such as 'epsg:2193'.
+  projection: local_tm
+  # How to treat borehole sensors: use the sensor depth from StationXML, or ignore it.
+  # Allowed: use_depth_from_stationxml | ignore_depth
+  borehole_sensors: use_depth_from_stationxml
+  # Datum of the catalogue (QuakeML/NLLoc) hypocentre depths. 'sea_level': depth is below mean
+  # sea level (NLLoc default when the grid origin is at sea level, even if the grid top is above
+  # it); 'surface': depth is below the local ground surface at the epicentre (needs surface
+  # elevations from stations or a DEM); 'reference': depth is below the fixed elevation
+  # reference_elevation_m.
+  # Allowed: sea_level | surface | reference
+  depth_datum: sea_level
+  # Elevation (m above sea level, positive up) of the depth datum; required when depth_datum is
+  # 'reference' (e.g. 600 for an NLLoc grid top at +0.6 km).
+  reference_elevation_m: null
+
+# Event and pick selection (Stage 1).
+data_selection:
+  # Polygon of [lat, lon] vertices; events outside are dropped. null keeps all.
+  region_polygon: null
+  # Example:
+  #   [[-38.60, 176.15], [-38.60, 176.25], [-38.50, 176.25], [-38.50, 176.15]]
+  # GeoJSON file (Polygon/MultiPolygon, lon/lat, holes allowed, optionally inside a
+  # Feature/FeatureCollection). Used instead of region_polygon when set.
+  region_geojson: null
+  # [min, max] event depth in km (positive down).
+  depth_km: [-1.0, 8.0]
+  # Minimum P picks per event.
+  min_p: 6
+  # Minimum S picks per event.
+  min_s: 0
+  # Maximum azimuthal gap in degrees.
+  max_azgap: 180.0
+  # Maximum catalogue RMS residual in seconds.
+  max_rms: 0.2
+  # Maximum epicentral distance to a used station, km.
+  max_epi_dist_km: 25.0
+
+  # Magnitude filter.
+  magnitude:
+    # Minimum magnitude; null disables the filter.
+    min: null
+    # Skip magnitude filtering/plots when the catalogue magnitudes are all invalid.
+    ignore_if_invalid: true
+  # Map from pick uncertainty upper limit (s) to VELEST weight class (0 best, 4 reject).
+  pick_uncertainty_to_weight: {'0.02': 0, '0.05': 1, '0.1': 2, '0.2': 3}
+  # Wadati-diagram outlier rejection threshold (sigma).
+  wadati_outlier_sigma: 3.0
+  # Fraction of events held out for validation.
+  validation_fraction: 0.15
+
+# VELEST Monte Carlo 1-D inversion (Stage 2).
+velest:
+  # Depth to the top of each layer, km (positive down, may be negative above sea level).
+  layers_top_km: [-0.6, 0.2, 0.7, 1.2, 1.7, 2.2, 3.0, 4.0]
+  # [lower, upper] Vp bounds in km/s for each layer (same length as layers_top_km).
+  vp_bounds: [[1.8, 3.5], [2.5, 4.0], [3.0, 4.5], [3.5, 5.0], [4.0, 5.5], [4.5, 6.0], [5.0, 6.2], [5.5, 6.5]]
+
+  # Vp/Vs treatment.
+  vpvs:
+    # 'fixed' uses 'value'; 'sampled' draws Vp/Vs uniformly from 'range'; 'independent_s_model'
+    # samples a separate S velocity model.
+    # Allowed: fixed | sampled | independent_s_model
+    mode: fixed
+    # Vp/Vs ratio for mode 'fixed'.
+    value: 1.75
+    # [min, max] Vp/Vs for mode 'sampled'.
+    range: [1.65, 1.85]
+  # Require Vp to be non-decreasing with depth in trial models.
+  monotonic: true
+  # Number of Monte Carlo trial models.
+  n_models: 1000
+  # Sampling scheme for trial velocity models.
+  # Allowed: latin_hypercube | sobol | uniform
+  sampler: latin_hypercube
+
+  # Starting hypocentre perturbation tests.
+  hypocentre_perturbation_km:
+    # Horizontal perturbation, km.
+    xy: 1.0
+    # Vertical perturbation, km.
+    z: 1.0
+    # Number of perturbed relocation tests.
+    n_tests: 50
+
+  # VELEST damping factors.
+  damping:
+    # Origin-time damping.
+    othet: 0.01
+    # Epicentre damping.
+    xythet: 0.01
+    # Depth damping.
+    zthet: 0.01
+    # Velocity damping.
+    vthet: 1.0
+    # Station-correction damping.
+    stathet: 0.01
+  # Maximum VELEST iterations per run.
+  ittmax: 9
+  # VELEST 'invertratio': invert for velocities every N-th iteration.
+  invertratio: 1
+
+  # Selection of the preferred model from the ensemble.
+  select:
+    # 'best_percent': best 'value' percent by RMS; 'best_n': best 'value' models; 'rms_below':
+    # all models with RMS below 'value' s.
+    # Allowed: best_percent | best_n | rms_below
+    method: best_percent
+    # Percent, count or RMS threshold depending on 'method'.
+    value: 5.0
+    # Statistic over the selected models giving the final model.
+    # Allowed: median | mean | best
+    statistic: median
+
+# 3-D starting model (Stage 3).
+model3d:
+  # Origin of the 3-D starting model.
+  # Allowed: velest_1d | user_grid | geology | wells | geology+wells
+  source: velest_1d
+
+  # Inversion grid geometry.
+  grid:
+    # Velocity-node spacing in x (east), km.
+    dx_km: 0.5
+    # Velocity-node spacing in y (north), km.
+    dy_km: 0.5
+    # Velocity-node spacing in depth, km.
+    dz_km: 0.5
+    # Padding around the stations/events, km.
+    pad_km: 3.0
+    # Maximum model depth, km.
+    zmax_km: 8.0
+  # Forward-grid refinement factor relative to the inversion grid.
+  propgrid_refine: 5
+  # Source of the top (surface) interface.
+  # Allowed: dem | flat | station_elevations
+  surface: station_elevations
+  # 'diagnostic': only report station delays; 'near_surface_layer': model them.
+  # Allowed: diagnostic | near_surface_layer
+  station_delays: diagnostic
+
+  # Inputs for the user-supplied model.
+  user_model:
+    # NetCDF/CSV velocity grid with x,y,z,vp[,vs] columns.
+    grid_file: null
+    # Geological units, ordered top to bottom.
+    horizons: []
+    # Example:
+    #   - {name: Huka, surface: data/huka_base.xyz, vp: {law: gradient, v0: 2.2, k: 0.6}}
+    #   - {name: Waiora, surface: data/waiora_base.tsurf, vp: {law: constant, v0: 3.4}}
+
+    # Well-log constraints.
+    wells:
+      # Directory of LAS well logs; null disables wells.
+      las_dir: null
+      # Log curve mnemonic to convert (sonic slowness).
+      curve: DT
+      # Vertical smoothing length applied to logs, m.
+      smoothing_m: 50.0
+      # Interpolation of well velocities between wells.
+      # Allowed: kriging | idw | linear
+      interp: kriging
+    # Background model outside the user model's coverage.
+    # Allowed: velest_1d | none
+    background: velest_1d
+    # Width of the taper blending user model into background, km.
+    blend_taper_km: 1.0
+    # Smoothing length applied to the combined model, km.
+    smoothing_km: 0.5
+
+# FMTOMO inversion (Stage 4).
+fmtomo:
+  # 'base' FMTOMO or the patched 'extras' variant.
+  # Allowed: base | extras
+  package: extras
+  # Phases to invert: [P], [P, S] (separate), or [vpvs] (joint Vp/Vs).
+  # Allowed: P | S | vpvs
+  phases: [P]
+  # Event relocation during inversion ('nonlinear' uses gridloc).
+  # Allowed: none | linear | nonlinear
+  relocate: nonlinear
+  # Non-linear inversion iterations.
+  iterations: 6
+  # Damping (used when not running the trade-off).
+  damping: 50.0
+  # Smoothing (used when not running the trade-off).
+  smoothing: 100.0
+
+  # Trade-off sweep settings.
+  tradeoff:
+    # Damping values to test.
+    damping: [1.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0]
+    # Smoothing values to test.
+    smoothing: [1.0, 10.0, 50.0, 100.0, 200.0, 500.0, 1000.0]
+    # 'sequential': sweep damping then smoothing; 'full_grid': all combinations.
+    # Allowed: sequential | full_grid
+    mode: sequential
+    # How to choose the preferred values from the L-curve.
+    # Allowed: max_curvature | manual
+    pick: max_curvature
+
+# Resolution tests (Stage 6).
+resolution:
+
+  # Checkerboard test settings.
+  checkerboard:
+    # Cell sizes to test, km.
+    cell_km: [1.5, 2.0, 3.0]
+    # Velocity perturbation amplitude, percent.
+    amplitude_pct: 5.0
+    # Also run a copy offset by half a cell.
+    offset_half_cell: true
+  # Spike tests.
+  spikes: []
+  # Example:
+  #   - {x_km: 0, y_km: 0, z_km: 2, radius_km: 0.75, pct: -8}
+  # Models used as the test background.
+  # Allowed: final_3d | user_model | starting
+  input_models: [final_3d, user_model]
+
+  # Noise added to synthetic data.
+  noise:
+    # Scale noise to each pick's uncertainty.
+    from_pick_uncertainty: true
+    # Noise scale factor.
+    scale: 1.0
+
+# Figure settings.
+plotting:
+  # Plotting backend.
+  # Allowed: matplotlib | pygmt
+  backend: matplotlib
+  # Figure file formats.
+  # Allowed: png | pdf | svg
+  format: [png, pdf]
+  # Raster resolution.
+  dpi: 200
+  # Cross-section profiles.
+  profiles:
+    - {name: "A-A'", start: [-38.62, 176.19], end: [-38.46, 176.21]}
+  # Example:
+  #   - {name: "A-A'", start: [-38.62, 176.19], end: [-38.46, 176.21]}
+  # Depths of horizontal slices, km.
+  depth_slices_km: [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0]
+  # Mask model where the derivative weight sum is below this.
+  dws_mask_threshold: 10.0
