@@ -1,0 +1,251 @@
+                                                                                
+
+ ::::::::::::::::::::::::::::::::::::::                                         
+  V E L E S T  - Version : January 3, 1995                                      
+  (Authors: see source code)                                                    
+ ::::::::::::::::::::::::::::::::::::::                                         
+
+
+ Title of this VELEST run:
+
+ osv my-project calibration
+ --------------------------
+
+
+ Current array-dimensions of program VELEST:
+
+ Max. number of EARTHQUAKES for simult. inversion IEQ = ***
+ Max. number of SHOTS for simult. inversion    INSHOT =   0
+ Max. number of (different) 1D-MODELS      ITOTMODELS =   2
+ Max. number of LAYERS per one 1D-model        INLTOT =  20
+ Max. number of STATIONS in stationlist           IST = 300
+ Max. number of OBSERVATIONS per event MAXOBSPEREVENT = 180
+
+
+
+
+
+
+    INPUT - P A R A M E T E R S :
+
+
+
+***
+***  olat       olon   icoordsystem      zshift   itrial ztrial    ised
+ -38.569801-176.199402      0            0.000       0     0.00      0
+***
+*** neqs   nshot    rotate
+     67      0      0.0
+***
+*** isingle   iresolcalc
+       0          0
+***
+*** dmax    itopo    zmin     veladj    zadj   lowveloclay
+    25.00     0      0.00       0.20    5.00       1
+***
+*** nsp    swtfac   vpvs       nmod
+     2      0.75    1.750        2
+***
+***   othet   xythet    zthet    vthet   stathet
+       0.01     0.01     0.01     1.00     0.01
+***
+*** nsinv   nshcor   nshfix     iuseelev    iusestacorr
+       1       0       0           1            0
+***
+*** iturbo    icnvout   istaout   ismpout
+       1         1         1         0
+***
+*** irayout   idrvout   ialeout   idspout   irflout   irfrout   iresout
+       0         0         0         0         0         0         0
+***
+*** delmin   ittmax   invertratio
+    0.001       9          1
+***
+*** Modelfile:
+model.mod
+***
+*** Stationfile:
+stations.sta
+***
+*** Seismofile:
+ 
+***
+*** File with region names:
+ 
+***
+*** File with region coordinates:
+ 
+***
+*** File #1 with topo data:
+ 
+***
+*** File #2 with topo data:
+ 
+***
+*** DATA INPUT files:
+***
+*** File with Earthquake data:
+events.cnv
+***
+*** File with Shot data:
+ 
+***
+*** OUTPUT files:
+***
+*** Main print output file:
+velest.out
+***
+*** File with single event locations:
+velout.vel
+***
+*** File with final hypocenters in *.cnv format:
+velout.cnv
+***
+*** File with new station corrections:
+velout.sta
+***
+*** File with summary cards (e.g. for plotting):
+velout.smp
+***
+*** File with raypoints:
+velout.ray
+***
+*** File with derivatives:
+velout.drv
+***
+*** File with ALEs:
+velout.ale
+***
+*** File with Dirichlet spreads:
+velout.dspr
+***
+*** File with reflection points:
+velout.rfl
+***
+*** File with refraction points:
+velout.rfr
+***
+*** File with residuals:
+velout.res
+***
+
+
+
+
+ Origin of cartesian coordinates:
+       -38.56980N   176.19940E
+
+  X,Y-AXES rotated clockwise from North
+           Rotation angle (rotate):
+            rotate=    0.0 degr.
+
+ icoordsystem =            0
+ normal SHORT DISTANCE CONVERSION will be made
+ x is positive towards west, y is positive towards north
+
+
+ SHORT DISTANCE CONVERSION on ELLIPSOIDE of WORLD GEODETIC SYSTEM 1972 (WGS72)
+ =============================================================================
+
+ Radius at equator (REARTH)= 6378.13500  km
+   1. / (ellipticity)      =    298.260
+
+ Origin of cartesian coordinates [degrees]:
+  -38.5698013 N     -176.1994019 W
+
+  Rotation angle (in degr.) clockwise from
+North  rotate=    0.0
+
+ Radius of sphere at OLAT =   6369.891 km
+
+ Conversion of GEOGRAPHICAL LATITUDE to GEOCENTRICAL LATITUDE:
+ RLATC = TAN(GEOCENTR.LAT) / TAN(GEOGRAPH.LAT)
+ RLATC =   0.99331185
+
+          Short distance conversions:
+          one min lat ~  1.8501 km 
+          one min lon ~  1.4525 km 
+
+
+
+
+ Station-corrections set to ZERO !
+ (if you do NOT invert for station-corrections,
+  then these 0.0-values are printed in file12 !)
+
+
+
+
+
+    INPUT - M O D E L :
+
+
+
+ Model(s) read from file :
+ model.mod                                                                       
+
+ model file title: 
+NM_6Layer_MC_0001                       
+ Velocity structure for model   1 :
+
+ layer    vel   depth   vdamp  reflector
+   1      2.54  -0.60    1.00                                           
+   2      4.46   0.20    1.00  
+   3      2.83   0.70    1.00  
+   4      4.34   1.20    1.00  
+   5      2.70   1.70    1.00  
+   6      5.60   2.20    1.00  
+
+ Calculation of average velocity starts at layer #            1
+ z = -0.60 ...  0.20    v = 2.54    AVEL = 2.54 downto z =   0.20
+ z =  0.20 ...  0.70    v = 4.46    AVEL = 3.28 downto z =   0.70
+ z =  0.70 ...  1.20    v = 2.83    AVEL = 3.15 downto z =   1.20
+ z =  1.20 ...  1.70    v = 4.34    AVEL = 3.41 downto z =   1.70
+ z =  1.70 ...  2.20    v = 2.70    AVEL = 3.28 downto z =   2.20
+
+
+ Calculation of average velocity starts at layer #            2
+ z =  0.20 ...  0.70    v = 4.46    AVEL = 4.46 downto z =   0.70
+ z =  0.70 ...  1.20    v = 2.83    AVEL = 3.64 downto z =   1.20
+ z =  1.20 ...  1.70    v = 4.34    AVEL = 3.88 downto z =   1.70
+ z =  1.70 ...  2.20    v = 2.70    AVEL = 3.58 downto z =   2.20
+
+
+ Velocity structure for model   2 :
+
+ layer    vel   depth   vdamp  reflector
+   1      1.45  -0.60    1.00                                           
+   2      2.55   0.20    1.00  
+   3      1.61   0.70    1.00  
+   4      2.48   1.20    1.00  
+   5      1.54   1.70    1.00  
+   6      3.20   2.20    1.00  
+
+ Calculation of average velocity starts at layer #            1
+ z = -0.60 ...  0.20    v = 1.45    AVEL = 1.45 downto z =   0.20
+ z =  0.20 ...  0.70    v = 2.55    AVEL = 1.87 downto z =   0.70
+ z =  0.70 ...  1.20    v = 1.61    AVEL = 1.80 downto z =   1.20
+ z =  1.20 ...  1.70    v = 2.48    AVEL = 1.95 downto z =   1.70
+ z =  1.70 ...  2.20    v = 1.54    AVEL = 1.87 downto z =   2.20
+
+
+ Calculation of average velocity starts at layer #            2
+ z =  0.20 ...  0.70    v = 2.55    AVEL = 2.55 downto z =   0.70
+ z =  0.70 ...  1.20    v = 1.61    AVEL = 2.08 downto z =   1.20
+ z =  1.20 ...  1.70    v = 2.48    AVEL = 2.21 downto z =   1.70
+ z =  1.70 ...  2.20    v = 1.54    AVEL = 2.05 downto z =   2.20
+
+
+
+
+
+
+    INPUT - S T A T I O N S :
+
+
+
+ Station-parameters read from file :
+ stations.sta                                                                    
+
+ WARNING:
+ SUBROUTINE :inputparam    ERROR OPENING FILE: station-input-file (FOR010)
