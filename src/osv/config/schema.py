@@ -157,10 +157,12 @@ class InputsConfig(_Base):
         "uncertainty",
         "Where pick weights come from: the pick time uncertainty, a 'wgt = x' comment, or both.",
     )
-    station_aliases: Literal["auto"] | dict[str, str] = F(
+    station_aliases: Literal["auto"] | dict[str, str] | Path = F(
         "auto",
         "VELEST needs station codes of at most 4 characters: 'auto' generates aliases, or give "
-        "an explicit {code: alias} mapping.",
+        "an explicit {code: alias} mapping, or a path to a CSV with columns code,alias "
+        "(or net,sta,alias).",
+        path=True,
     )
     dem: Path | None = F(None, "Optional GeoTIFF DEM used for the surface interface.", path=True)
 
@@ -368,6 +370,16 @@ class StabilityConfig(_Base):
     n_reference_stations: int = F(
         3, "Number of automatically chosen alternative reference stations.", ge=0
     )
+    delay_swtfac: float | None = F(
+        0.01,
+        "With nsp = 3, S readings give no station-delay partials although their residual "
+        "contains the delay (ptcor * vpvs), so inverting delays with S data weighted makes "
+        "the RMS climb. Runs that invert delays (the fixed-model delay step, the "
+        "reference-station test) therefore weight S by this factor; the other tests hold "
+        "the delays of the fixed-model run fixed. null keeps the S weight and inverts "
+        "delays in every run (the previous behaviour).",
+        ge=0,
+    )
     lvz_test: bool = F(True, "Run the low-velocity-layer on/off test.")
     horizontal_mislocation_warn_km: float = F(
         0.5, "Warn when the mean horizontal mislocation exceeds this (km).", gt=0
@@ -405,6 +417,14 @@ class VelestSelect(_Base):
     statistic: Literal["median", "mean", "best"] = F(
         "median", "Statistic over the selected models giving the final model."
     )
+    final_model: Literal["median", "best", "closest", "iterated"] = F(
+        "median",
+        "Which model becomes the final model. 'median': the per-layer 'statistic' of the "
+        "selected runs; 'best': the single lowest-RMS run; 'closest': the selected run nearest "
+        "the per-layer statistic (a model VELEST actually produced); 'iterated': the statistic "
+        "model iterated with VELEST (delays frozen) to a fixed point. The p05-p95 uncertainty "
+        "is always taken from the selected ensemble.",
+    )
 
     @model_validator(mode="after")
     def _check(self) -> VelestSelect:
@@ -432,6 +452,13 @@ class DampingStage(_Base):
         None, "Station-correction damping (None: velest.damping.stathet).", ge=0
     )
     ittmax: int | None = F(None, "Iterations of this stage (None: velest.ittmax).", ge=1)
+    swtfac: float | None = F(
+        None,
+        "Weight factor of S readings in this stage (None: the control file value). With "
+        "nsp = 3 a small value (e.g. 0.01) makes the stage a P-only inversion, which is "
+        "the consistent way to estimate station delays.",
+        ge=0,
+    )
     invertratio: int | None = F(
         None, "VELEST 'invertratio' of this stage (None: velest.invertratio).", ge=0
     )
@@ -516,6 +543,23 @@ class VpVsGridConfig(_Base):
         return v
 
 
+class VdampAutoConfig(_Base):
+    """Factors of ``velest.vdamp: auto``."""
+
+    near_surface: float = F(
+        10.0,
+        "vdamp of layers that start above the deepest station (their velocity trades off "
+        "with the station delays).",
+        ge=0, le=999,
+    )  # fmt: skip
+    below_events: float = F(
+        3.0,
+        "vdamp of layers that start below the deepest hypocentre (sampled by refracted rays "
+        "only).",
+        ge=0, le=999,
+    )  # fmt: skip
+
+
 class VelestConfig(_Base):
     """VELEST Monte Carlo 1-D inversion (Stage 2)."""
 
@@ -539,6 +583,14 @@ class VelestConfig(_Base):
         min_length=1,
     )
     vpvs: VpVsConfig = FF(VpVsConfig, "Vp/Vs treatment.")
+    vdamp: float | list[float] | Literal["auto"] = F(
+        1.0,
+        "VELEST per-layer velocity damping factor (the model file's vdamp; effective damping "
+        "is damping.vthet * vdamp): a number for all layers, one value per layer, or 'auto' "
+        "(heavier damping for layers above the deepest station and below the deepest event, "
+        "see vdamp_auto).",
+    )
+    vdamp_auto: VdampAutoConfig = FF(VdampAutoConfig, "Factors used by vdamp: auto.")
     monotonic: bool = F(True, "Require Vp to be non-decreasing with depth in trial models.")
     n_models: int = F(1000, "Number of Monte Carlo trial models.", ge=1)
     include_reference_model: bool = F(
@@ -595,6 +647,15 @@ class VelestConfig(_Base):
             )
         if any(lo <= 0 for lo, _ in self.vp_bounds):
             raise ValueError("vp_bounds: velocities must be > 0")
+        if isinstance(self.vdamp, list):
+            if len(self.vdamp) != len(tops):
+                raise ValueError(
+                    f"vdamp: has {len(self.vdamp)} entries but layers_top_km has {len(tops)}"
+                )
+            if any(not 0 <= x <= 999 for x in self.vdamp):
+                raise ValueError("vdamp: values must be between 0 and 999")
+        elif not isinstance(self.vdamp, str) and not 0 <= self.vdamp <= 999:
+            raise ValueError("vdamp: must be between 0 and 999")
         if self.vpvs.s_bounds is not None and len(self.vpvs.s_bounds) != len(tops):
             raise ValueError(
                 f"vpvs.s_bounds: has {len(self.vpvs.s_bounds)} entries but layers_top_km "
@@ -623,6 +684,15 @@ class GridConfig(_Base):
     dz_km: float = F(0.5, "Velocity-node spacing in depth, km.", gt=0)
     pad_km: float = F(3.0, "Padding around the stations/events, km.", ge=0)
     zmax_km: float = F(8.0, "Maximum model depth, km.", gt=0)
+    top_margin_km: float = F(
+        0.2, "Height of the model top above the highest station elevation, km.", ge=0.05
+    )
+    extent_from: Literal["both", "stations", "events"] = F(
+        "both", "Which positions define the horizontal extent (before padding)."
+    )
+    max_memory_gb: float = F(
+        16.0, "Warn when the estimated fm3d memory for the propagation grid exceeds this.", gt=0
+    )
 
 
 class ConstantLaw(_Base):
@@ -697,6 +767,12 @@ class Model3DConfig(_Base):
     propgrid_refine: int = F(
         5, "Forward-grid refinement factor relative to the inversion grid.", ge=1
     )
+    source_refine_factor: int = F(
+        5, "fm3d refinement of the grid around each source (propgrid.in line 4).", ge=1
+    )
+    source_refine_cells: int = F(
+        5, "Extent of the refined grid around each source, in propagation cells.", ge=1
+    )
     surface: Literal["dem", "flat", "station_elevations"] = F(
         "station_elevations", "Source of the top (surface) interface."
     )
@@ -739,6 +815,32 @@ class TradeoffConfig(_Base):
     )
 
 
+class GridlocConfig(_Base):
+    """Extras ``gridloc``: grid search over the whole propagation grid.
+
+    ``gridloc`` evaluates every node of the propagation grid (``arrtimes.dat``), so its
+    search spacing is the ``propgrid.in`` spacing and there is no window around the event;
+    the sub-cell refinement is the only resolution control.
+    """
+
+    min_stations: int = F(5, "Do not relocate events with fewer picks than this.", ge=1)
+    max_origin_time_shift_s: float = F(5.0, "Maximum origin-time perturbation, s.", gt=0)
+    refine: bool = F(True, "Refine the minimum with a trilinear sub-cell search.")
+    subcell_dicing: int = F(10, "Sub-cell dicing of the refined search (must be > 1).", ge=2)
+
+
+class JointVpVsConfig(_Base):
+    """Experimental joint P/S (gridlocj) and Vp/Vs (vpvsinv) settings."""
+
+    s_weight: float = F(3.0, "gridlocj: S weight (higher = S times count less).", gt=0)
+    sp_weight: float = F(100.0, "gridlocj: weight of S-P residuals.", gt=0)
+    relocation_based_on: Literal[1, 2, 3, 4] = F(
+        1, "gridlocj: 1 P only, 2 P + unique S, 3 P + S-P + unique S, 4 P and S."
+    )
+    vpvs_max_depth_km: float = F(50.0, "mkvpvs: maximum depth of the Vp/Vs model, km.", gt=0)
+    sparse_fraction: float = F(0.1, "vpvsinv: fraction of max G size for the sparse matrix.", gt=0)
+
+
 class FmtomoConfig(_Base):
     """FMTOMO inversion (Stage 4)."""
 
@@ -757,6 +859,36 @@ class FmtomoConfig(_Base):
     damping: float = F(50.0, "Damping (used when not running the trade-off).", ge=0)
     smoothing: float = F(100.0, "Smoothing (used when not running the trade-off).", ge=0)
     tradeoff: TradeoffConfig = FF(TradeoffConfig, "Trade-off sweep settings.")
+    subspace_dimension: int = F(
+        20,
+        "Subspace dimension of invert3d (raised to the number of parameter classes).",
+        ge=1,
+        le=50,
+    )
+    invert_velocity: bool = F(True, "Invert for velocity (False: relocation only).")
+    invert_interfaces: list[int] = F(
+        [], "1-based ids of interfaces whose depth is inverted (empty: none)."
+    )
+    source_damping_position: float = F(
+        1.0, "Relative damping of linear source position updates (invert3d damp1).", ge=0
+    )
+    source_damping_time: float = F(
+        1.0, "Relative damping of linear origin-time updates (invert3d damp2).", ge=0
+    )
+    min_velocity_km_s: float = F(0.5, "Minimum velocity permitted by invert3d, km/s.", gt=0)
+    min_interface_distance_km: float = F(
+        0.07, "Minimum distance between interfaces kept by invert3d, km.", ge=0
+    )
+    save_rays: bool = F(True, "Save ray paths (rays.dat) in the forward runs.")
+    station_terms: Literal["none", "preapply"] = F(
+        "none",
+        "FMTOMO has no station terms. 'preapply' subtracts per-station mean residuals "
+        "(supplied to assemble_run_dir) from the observed times before inversion.",
+    )
+    gridloc: GridlocConfig = FF(GridlocConfig, "Nonlinear relocation (Extras gridloc) settings.")
+    joint: JointVpVsConfig = FF(
+        JointVpVsConfig, "Joint P+S / Vp/Vs (experimental, Extras tomo3dj and tomo3dps)."
+    )
 
     @model_validator(mode="after")
     def _check(self) -> FmtomoConfig:
@@ -765,6 +897,15 @@ class FmtomoConfig(_Base):
             raise ValueError("phases: duplicate entries")
         if "vpvs" in ph and len(ph) > 1:
             raise ValueError("phases: 'vpvs' (joint) cannot be combined with P or S")
+        if len(set(self.invert_interfaces)) != len(self.invert_interfaces) or any(
+            i < 1 for i in self.invert_interfaces
+        ):
+            raise ValueError("invert_interfaces: need distinct ids >= 1")
+        if self.package == "base" and (self.relocate == "nonlinear" or "vpvs" in ph):
+            raise ValueError(
+                "package: 'base' FMTOMO has no nonlinear relocation or Vp/Vs inversion "
+                "(use package: extras, or relocate: linear/none and phases P/S)"
+            )
         return self
 
 

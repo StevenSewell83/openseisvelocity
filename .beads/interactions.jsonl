@@ -37,3 +37,4 @@
 {"id":"int-37a60473e3cc9d1f5a2017cd8c26adeb","kind":"field_change","created_at":"2026-10-17T11:06:55.526962776Z","actor":"steve","issue_id":"osv-e9q","extra":{"field":"priority","new_value":"3","old_value":"2"}}
 {"id":"int-7012195d4c609d50773a45b1c987be2c","kind":"field_change","created_at":"2026-10-17T11:07:39.885470944Z","actor":"steve","issue_id":"osv-8vx.7","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
 {"id":"int-fde5576e194a0a8e4f0b23277bba7b1f","kind":"field_change","created_at":"2026-10-17T11:17:32.674410308Z","actor":"steve","issue_id":"osv-8vx.9","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
+{"id":"int-0b93d5e8586df1acf99305f1c0557dff","kind":"field_change","created_at":"2026-10-17T11:20:05.339386964Z","actor":"steve","issue_id":"osv-jac.1","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
