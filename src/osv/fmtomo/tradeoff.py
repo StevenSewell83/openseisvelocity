@@ -292,11 +292,28 @@ def _row_from_result(
     except Exception as exc:  # noqa: BLE001 - metrics are best effort, keep the data misfit
         flags.append(f"metrics failed: {exc}")
     last = tab.iloc[-1]
-    var = _f(last.get("variance_s2"))
+    # the exact statistics (invert._ray_stats) replace the rounded numbers of residuals.dat
+    var = _f(last.get("variance_exact_s2"))
+    if not math.isfinite(var):
+        var = _f(last.get("variance_s2"))
     chi2 = _f(last.get("chi2"))
-    rms = _f(last.get("rms_ms")) / 1000.0
+    rms = (
+        _f(
+            last.get("rms_exact_ms")
+            if math.isfinite(_f(last.get("rms_exact_ms")))
+            else last.get("rms_ms")
+        )
+        / 1000.0
+    )
     prev = tab.iloc[-2] if len(tab) > 1 else tab.iloc[-1]
-    rms_prev = _f(prev.get("rms_ms")) / 1000.0
+    rms_prev = (
+        _f(
+            prev.get("rms_exact_ms")
+            if math.isfinite(_f(prev.get("rms_exact_ms")))
+            else prev.get("rms_ms")
+        )
+        / 1000.0
+    )
     # converged: the last iteration changed the misfit by less than 2 %
     converged = bool(
         len(tab) > 1 and rms_prev > 0 and abs(rms - rms_prev) / rms_prev < 0.02 and res.success

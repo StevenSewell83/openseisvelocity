@@ -10,7 +10,7 @@ project:
   # Directory under which numbered stage directories are created.
   workdir: runs
   # Parallel worker processes; -1 uses all CPU cores.
-  n_jobs: 16
+  n_jobs: 24
   # Seed for all random number generators (reproducibility).
   random_seed: 42
 
@@ -232,9 +232,9 @@ fmtomo:
   phases: [P]
   # Event relocation during inversion ('nonlinear' uses gridloc).
   # Allowed: none | linear | nonlinear
-  relocate: nonlinear
+  relocate: linear
   # Non-linear inversion iterations.
-  iterations: 6
+  iterations: 5
   # Damping (used when not running the trade-off).
   damping: 50.0
   # Smoothing (used when not running the trade-off).
@@ -243,15 +243,19 @@ fmtomo:
   # Trade-off sweep settings.
   tradeoff:
     # Damping values to test.
-    damping: [1.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0]
+    damping: [0.01, 0.05, 0.2, 1.0, 5.0, 20.0, 50.0, 200.0, 1000.0]
     # Smoothing values to test.
-    smoothing: [1.0, 10.0, 50.0, 100.0, 200.0, 500.0, 1000.0]
+    smoothing: [1.0, 10.0, 50.0, 200.0, 1000.0]
     # 'sequential': sweep damping then smoothing; 'full_grid': all combinations.
     # Allowed: sequential | full_grid
     mode: sequential
     # How to choose the preferred values from the L-curve.
     # Allowed: max_curvature | manual
     pick: max_curvature
+    # Inversion iterations of each trade-off run.
+    iterations: 2
+    # Trade-off inversions run at the same time (disk is tight).
+    max_concurrent: 1
 
 # Resolution tests (Stage 6).
 resolution:
@@ -297,4 +301,4 @@ plotting:
   # Depths of horizontal slices, km.
   depth_slices_km: [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0]
   # Mask model where the derivative weight sum is below this.
-  dws_mask_threshold: 10.0
+  dws_mask_threshold: 0.1

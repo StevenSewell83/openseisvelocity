@@ -252,6 +252,12 @@ def _ray_stats(run: Path) -> dict[str, float]:
         if both.any()
         else math.nan
     )
+    # residuals.dat has 5 decimals for the variance (s^2): useless below ~10 ms rms.  The same
+    # statistics from the times themselves (residuals.f90:152-154) without the rounding.
+    r = arr["time"].to_numpy()[both] - obs["time"].to_numpy()[both]
+    n = int(both.sum())
+    out["rms_exact_ms"] = 1000.0 * math.sqrt(float(np.sum(r**2)) / n) if n else math.nan
+    out["variance_exact_s2"] = float(np.sum(r**2)) / (n - 1) if n > 1 else math.nan
     return out
 
 
