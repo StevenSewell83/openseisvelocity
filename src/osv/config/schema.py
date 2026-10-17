@@ -888,7 +888,10 @@ class Model3DConfig(_Base):
     )
     grid: GridConfig = FF(GridConfig, "Inversion grid geometry.")
     propgrid_refine: int = F(
-        5, "Forward-grid refinement factor relative to the inversion grid.", ge=1
+        3,
+        "Forward-grid refinement factor relative to the inversion grid (3: ~3 ms median P "
+        "travel-time error vs 5, 6x less time, 4x less memory; 2 is ~6 ms, 5 the slow reference).",
+        ge=1,
     )
     source_refine_factor: int = F(
         5, "fm3d refinement of the grid around each source (propgrid.in line 4).", ge=1

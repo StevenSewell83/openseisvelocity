@@ -185,7 +185,7 @@ model3d:
     # Maximum model depth, km.
     zmax_km: 8.0
   # Forward-grid refinement factor relative to the inversion grid.
-  propgrid_refine: 5
+  propgrid_refine: 3
   # Source of the top (surface) interface.
   # Allowed: dem | flat | station_elevations
   surface: station_elevations

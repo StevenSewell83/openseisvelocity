@@ -139,7 +139,7 @@ velest:
 model3d:
   source: velest_1d                    # velest_1d | user_grid | geology | wells | geology+wells
   grid: {dx_km: 0.5, dy_km: 0.5, dz_km: 0.5, pad_km: 3, zmax_km: 8}
-  propgrid_refine: 5
+  propgrid_refine: 3
   surface: station_elevations          # dem | flat | station_elevations
   station_delays: diagnostic           # diagnostic | near_surface_layer
   user_model:
