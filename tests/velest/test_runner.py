@@ -183,6 +183,7 @@ def test_compact(tmp_path, dummy_tool, models, inputs):
 def test_missing_executable(tmp_path, monkeypatch, models, inputs):
     monkeypatch.setenv("OSV_TOOLS_DIR", str(tmp_path / "nope"))
     monkeypatch.setattr("osv.tools.REPO_BUILD_BIN", tmp_path / "nope2")
+    monkeypatch.setattr("sys.prefix", str(tmp_path / "nope3"))
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
     monkeypatch.delenv("CONDA_PREFIX", raising=False)
     with pytest.raises(ToolNotFoundError):

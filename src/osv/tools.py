@@ -5,7 +5,7 @@ Resolution order for a name:
 
 1. explicit override (``overrides`` dict name -> path, e.g. from the config),
 2. ``$OSV_TOOLS_DIR`` (a directory),
-3. ``$CONDA_PREFIX/bin/osv-tools/``,
+3. ``$CONDA_PREFIX/bin/osv-tools/``, then ``<sys.prefix>/bin/osv-tools/`` (venv installs),
 4. repo-local ``build/bin/``,
 5. ``PATH`` (last, with a warning: an unrelated old ``velest`` may be found).
 
@@ -23,6 +23,7 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 import time
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -172,6 +173,9 @@ def _search_dirs() -> list[Path]:
         dirs.append(Path(os.environ[ENV_TOOLS_DIR]).expanduser())
     if os.environ.get("CONDA_PREFIX"):
         dirs.append(Path(os.environ["CONDA_PREFIX"]) / "bin" / "osv-tools")
+    # Environment the interpreter runs from (venv installs by install.sh --venv work
+    # without activation).
+    dirs.append(Path(sys.prefix) / "bin" / "osv-tools")
     dirs.append(REPO_BUILD_BIN)
     return dirs
 

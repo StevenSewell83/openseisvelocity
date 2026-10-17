@@ -32,6 +32,8 @@ def clean_env(monkeypatch, tmp_path):
     for v in ("OSV_TOOLS_DIR", "CONDA_PREFIX", "OSV_EXTRAS_PREFIX"):
         monkeypatch.delenv(v, raising=False)
     monkeypatch.setattr(tools, "REPO_BUILD_BIN", tmp_path / "nonexistent_build")
+    # an install.sh --venv environment has <sys.prefix>/bin/osv-tools: hide it from the tests
+    monkeypatch.setattr("sys.prefix", str(tmp_path / "no_prefix"))
     monkeypatch.setenv("PATH", str(tmp_path / "emptypath") + os.pathsep + "/usr/bin:/bin")
 
 
@@ -164,3 +166,10 @@ def test_tool_versions(tmp_path, monkeypatch):
     assert list(v) == ["velest"]
     assert v["velest"]["path"] == str(p) and len(str(v["velest"]["sha256"])) == 64
     assert v["velest"]["mtime"] == p.stat().st_mtime
+
+
+def test_venv_prefix_search(tmp_path, monkeypatch):
+    """Tools installed by ``install.sh --venv`` are found without activating the venv."""
+    exe = make_exe(tmp_path / "venv" / "bin" / "osv-tools", "velest", "exit 0")
+    monkeypatch.setattr("sys.prefix", str(tmp_path / "venv"))
+    assert which_tool("velest") == exe

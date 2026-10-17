@@ -1,0 +1,10 @@
+# Optional GMT / PyGMT add-on (large: pulls GMT, GDAL, ghostscript).
+# install.sh applies it on top of environment.yml unless --no-gmt is given:
+#   conda env update -n osv -f environment-gmt.yml
+name: osv
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - gmt
+  - pygmt

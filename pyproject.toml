@@ -38,6 +38,8 @@ packages = ["src/osv"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+tmp_path_retention_count = 1
+tmp_path_retention_policy = "failed"
 markers = [
     "integration: needs built binaries or external data; skipped when unavailable",
 ]
