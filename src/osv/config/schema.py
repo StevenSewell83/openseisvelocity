@@ -822,13 +822,21 @@ class UserModelConfig(_Base):
         ),
     )
     wells: WellsConfig = FF(WellsConfig, "Well-log constraints.")
-    background: Literal["velest_1d", "none"] = F(
-        "velest_1d", "Background model outside the user model's coverage."
+    background: Literal["velest_1d", "constant", "none"] = F(
+        "velest_1d",
+        "Background model outside the user model's coverage: the extruded VELEST 1-D model, a "
+        "constant (background_vp_km_s) or none (NaN outside coverage).",
     )
+    background_vp_km_s: float | None = F(None, "Vp of the 'constant' background, km/s.", gt=0)
+    background_vpvs: float = F(1.75, "Vp/Vs of the 'constant' background.", gt=1.0)
     blend_taper_km: float = F(
         1.0, "Width of the taper blending user model into background, km.", ge=0
     )
     smoothing_km: float = F(0.5, "Smoothing length applied to the combined model, km.", ge=0)
+    smoothing_target: Literal["blend", "user"] = F(
+        "blend",
+        "'blend': smooth the blended model; 'user': smooth only the user model before blending.",
+    )
 
 
 class ExtrusionUncertaintyConfig(_Base):
@@ -857,6 +865,18 @@ class ExtrusionConfig(_Base):
     )
     uncertainty: ExtrusionUncertaintyConfig = FF(
         ExtrusionUncertaintyConfig, "A priori uncertainty written to the vgrids."
+    )
+
+
+class ModelChecksConfig(_Base):
+    """Thresholds of the physical checks on the starting model."""
+
+    vp_min_km_s: float = F(1.0, "Vp below this is flagged, km/s.", gt=0)
+    vp_max_km_s: float = F(8.5, "Vp above this is flagged, km/s.", gt=0)
+    vpvs_min: float = F(1.4, "Vp/Vs below this is flagged.", gt=0)
+    vpvs_max: float = F(2.2, "Vp/Vs above this is flagged.", gt=0)
+    max_gradient_km_s_per_km: float = F(
+        3.0, "Velocity gradient magnitude above this is flagged, (km/s)/km.", gt=0
     )
 
 
@@ -902,6 +922,15 @@ class Model3DConfig(_Base):
         "the residual 3-D signal is smaller, at the risk of removing real structure.",
     )
     user_model: UserModelConfig = FF(UserModelConfig, "Inputs for the user-supplied model.")
+    uncertainty_from_weight: bool = F(
+        False,
+        "Increase the a priori uncertainty where the user model's weight is low "
+        "(factor uncertainty_low_weight_factor at weight 0, capped by extrusion max_km_s).",
+    )
+    uncertainty_low_weight_factor: float = F(
+        2.0, "Uncertainty multiplier at zero user-model weight (uncertainty_from_weight).", ge=1
+    )
+    checks: ModelChecksConfig = FF(ModelChecksConfig, "Physical checks of the starting model.")
 
     @model_validator(mode="after")
     def _check(self) -> Model3DConfig:
