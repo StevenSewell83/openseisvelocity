@@ -1251,6 +1251,31 @@ class AnalysisConfig(_Base):
     qc: AnalysisQCConfig = FF(AnalysisQCConfig, "QC thresholds of the checks.")
 
 
+class BootstrapConfig(_Base):
+    """Event-resampled model uncertainty: bootstrap or jackknife inversions (Stage 7)."""
+
+    enabled: bool = F(False, "Run the bootstrap/jackknife inversions (slow: one inversion each).")
+    method: Literal["bootstrap", "jackknife"] = F(
+        "bootstrap",
+        "bootstrap: events drawn with replacement; jackknife: delete-d resampling of events.",
+    )
+    n_samples: int = F(
+        20, "Resampled inversions (jackknife: at most one per event for leave-one-out).", ge=2
+    )
+    seed: int | None = F(None, "Resampling seed (None: project.random_seed).")
+    max_concurrent: int | None = F(
+        None, "Inversions run at the same time (None: n_jobs // 4, at least 1).", ge=1
+    )
+    iterations: int | None = F(None, "Iterations per inversion (None: fmtomo.iterations).", ge=1)
+    delete_fraction: float = F(
+        0.1, "Jackknife: fraction of the events deleted in each sample.", gt=0, lt=1
+    )
+    interval_percent: float = F(
+        90.0, "Width (percent) of the central interval reported for every node.", gt=0, lt=100
+    )
+    min_free_disk_gb: float = F(1.0, "Do not start an inversion with less free disk (GB).", ge=0)
+
+
 class ValidationConfig(_Base):
     """Validation relocation of the held-out events (Stage 7)."""
 
@@ -1272,6 +1297,7 @@ class ValidationConfig(_Base):
     max_hypo_shift_warn_km: float = F(
         5.0, "Warn when the 1-D to 3-D hypocentre shift exceeds this (km).", gt=0
     )
+    bootstrap: BootstrapConfig = FF(BootstrapConfig, "Bootstrap / jackknife model uncertainty.")
 
 
 class ReportConfig(_Base):
