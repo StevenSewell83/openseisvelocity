@@ -159,6 +159,9 @@ def _sample_geotiff(
     path: Path, fla: np.ndarray, flo: np.ndarray, findings: list[str]
 ) -> np.ndarray:
     try:
+        from osv._proj import ensure_proj_data
+
+        ensure_proj_data()
         import rasterio
     except ImportError as exc:  # pragma: no cover - depends on the environment
         raise InterfaceError(

@@ -138,6 +138,10 @@ def test_read_tsurf_bad(grid, tmp_path):
 def test_read_geotiff_nztm(grid, tmp_path):
     rasterio = pytest.importorskip("rasterio")
     from rasterio.errors import CRSError
+
+    from osv._proj import ensure_proj_data
+
+    ensure_proj_data()
     from rasterio.transform import from_origin
 
     exp, e0, n0 = _expected(grid)

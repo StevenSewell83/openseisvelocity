@@ -161,6 +161,9 @@ def read_geotiff(
     The CRS stored in the file is used unless ``crs`` overrides it; nodata cells become NaN.
     """
     try:
+        from osv._proj import ensure_proj_data
+
+        ensure_proj_data()
         import rasterio
     except ImportError as exc:
         raise ImportError(

@@ -11,6 +11,7 @@ import typer
 
 from osv import __version__
 from osv import stages as _stages
+from osv._proj import ensure_proj_data
 from osv.config import ConfigError, OSVConfig, dump_config, load_config, write_template
 
 app = typer.Typer(
@@ -41,6 +42,7 @@ def main(
     ),
 ) -> None:
     """openSeisVelocity command line."""
+    ensure_proj_data()
 
 
 @app.command("version")

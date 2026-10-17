@@ -191,6 +191,77 @@ def _missing_libs(path: Path) -> list[str]:
     return [ln.split()[0] for ln in res.stdout.splitlines() if "not found" in ln]
 
 
+def check_proj() -> list[Check]:
+    """EPSG lookups via pyproj and (if installed) rasterio; a stale PROJ_DATA breaks them."""
+    env = {v: os.environ.get(v) for v in ("PROJ_DATA", "PROJ_LIB")}
+    try:
+        import pyproj
+
+        datadir = pyproj.datadir.get_data_dir()
+    except ImportError:
+        datadir = "n/a"
+    info = f"PROJ_DATA={env['PROJ_DATA']!r} PROJ_LIB={env['PROJ_LIB']!r} pyproj data dir={datadir}"
+    fix = (
+        "unset PROJ_DATA PROJ_LIB (a conda/system PROJ with an older proj.db is shadowing the "
+        f"bundled one), or point PROJ_DATA at {datadir}. osv overrides a stale value "
+        "automatically unless OSV_KEEP_PROJ_DATA=1."
+    )
+    out: list[Check] = []
+    details = {**env, "pyproj_data_dir": datadir}
+    try:
+        import pyproj
+
+        pyproj.CRS.from_epsg(2193)
+        out.append(
+            Check(
+                "proj:pyproj", OK, f"pyproj EPSG:2193 ok; {info}", group="python", details=details
+            )
+        )
+    except ImportError:
+        pass
+    except Exception as exc:  # noqa: BLE001
+        out.append(
+            Check(
+                "proj:pyproj",
+                FAIL,
+                f"pyproj EPSG:2193 failed ({str(exc)[:100]}); {info}",
+                fix,
+                "python",
+                details=details,
+            )
+        )
+    try:
+        from osv._proj import ensure_proj_data
+
+        ensure_proj_data()  # same guard the CLI applies, so the check reflects real runs
+        import rasterio.crs
+    except ImportError:
+        return out
+    try:
+        rasterio.crs.CRS.from_epsg(2193)
+        out.append(
+            Check(
+                "proj:rasterio",
+                OK,
+                f"rasterio EPSG:2193 ok; {info}",
+                group="python",
+                details=details,
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        out.append(
+            Check(
+                "proj:rasterio",
+                FAIL,
+                f"rasterio EPSG:2193 failed ({str(exc)[:100]}); {info}",
+                fix,
+                "python",
+                details=details,
+            )
+        )
+    return out
+
+
 def check_tools() -> list[Check]:
     """Each known executable: found, runnable, and where it came from."""
     out: list[Check] = []
@@ -734,6 +805,7 @@ def run_doctor(
                 )
             )
     results += check_python()
+    results += check_proj()
     results += check_tools()
     results += check_build()
     results += check_system(workdir, n_jobs)
