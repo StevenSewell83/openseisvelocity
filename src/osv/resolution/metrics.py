@@ -125,7 +125,10 @@ def local_metrics(
     rr = np.where(ok, r, 0.0)
     sw = _smooth(w, sg)
     with np.errstate(invalid="ignore", divide="ignore"):
-        inv = np.where(sw > 1e-12, 1.0 / sw, np.nan)
+        # divide only where the window holds weight: 1 / sw overflows for the denormal tails
+        # of the Gaussian filter far from any valid node
+        inv = np.full(sw.shape, np.nan)
+        np.divide(1.0, sw, out=inv, where=sw > 1e-12)
         mt = _smooth(tt, sg) * inv
         mr = _smooth(rr, sg) * inv
         vt = np.maximum(_smooth(tt * tt, sg) * inv - mt**2, 0.0)
@@ -137,15 +140,20 @@ def local_metrics(
         eps = FLAT_FRACTION * total
         flat_t = vt <= eps
         flat_r = vr <= eps
-        corr = cv / np.sqrt(vt * vr)
+        corr = np.full(sw.shape, np.nan)
+        np.divide(cv, np.sqrt(vt * vr), out=corr, where=~flat_t & ~flat_r)
         corr = np.where(flat_r & ~flat_t, 0.0, corr)
         corr = np.where(flat_t, np.nan, np.clip(corr, -1.0, 1.0))
-        amp = np.where(flat_t, np.nan, cv / vt)
-        rms_ratio = np.where(qt > eps, np.sqrt(qr / qt), np.nan)
+        amp = np.full(sw.shape, np.nan)
+        np.divide(cv, vt, out=amp, where=~flat_t)
+        ratio = np.full(sw.shape, np.nan)
+        np.divide(qr, qt, out=ratio, where=qt > eps)
+        rms_ratio = np.sqrt(ratio)
         big = (np.abs(tt) >= sign_floor * (np.abs(tt).max() if ok.any() else 0.0)) & ok
         agree = (np.sign(tt) == np.sign(rr)) & big
         denom = _smooth(big.astype(float), sg)
-        sign = np.where(denom > 1e-6, _smooth(agree.astype(float), sg) / denom, np.nan)
+        sign = np.full(sw.shape, np.nan)
+        np.divide(_smooth(agree.astype(float), sg), denom, out=sign, where=denom > 1e-6)
     out = {"corr": corr, "amp": amp, "rms_ratio": rms_ratio, "sign_agree": sign}
     for k, v in out.items():
         out[k] = np.where(ok & (sw > 1e-6), v, np.nan)

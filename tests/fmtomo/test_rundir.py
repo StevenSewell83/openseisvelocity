@@ -140,7 +140,7 @@ def test_nonlinear_run_dir(ex1, tmp_path):
     assert "scorrect.in" not in man.files and "sourcederivs.in" not in man.files
     src = read_src_dat(tmp_path / "src.dat")
     assert src.attrs["n_blocks"] == 100 and len(src) == int((ex1["otimes"]["time"] > 0).sum())
-    assert set(src["id"]) == {1, 2, 3, 4, 5}
+    assert set(src["block"]) == {1, 2, 3, 4, 5} and set(src["id"]) <= set(range(1, 101))
     gs = read_gridsave(tmp_path / "gridsave.in")
     assert [(g.source, g.paths) for g in gs] == [(i, (1,)) for i in range(1, 6)]
     assert read_observed(tmp_path / "otimesref.dat").equals(
@@ -170,6 +170,20 @@ def test_derive_src_dat_skips_invalid_times(ex1):
     ot.loc[0, "time"] = -100.0
     df = derive_src_dat(ot, 100)
     assert len(df) == int((ex1["otimes"]["time"] > 0).sum()) - 1 and df.attrs["n_blocks"] == 100
+
+
+def test_derive_src_dat_blocks_are_sources_ids_are_events():
+    ot = pd.DataFrame(
+        {
+            "receiver": [1, 2, 3],
+            "source": [2, 1, 1],
+            "time": [1.0, 2.0, -1.0],
+            "uncertainty": [0.1, 0.1, 0.1],
+        }
+    )
+    df = derive_src_dat(ot, 2, event_ids=[7, 9, 4])
+    assert df["block"].tolist() == [1, 2] and df["id"].tolist() == [9, 7]
+    assert derive_src_dat(ot, 2)["id"].tolist() == [2, 1]
 
 
 def test_validation_lists_every_problem(ex1, tmp_path):

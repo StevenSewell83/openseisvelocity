@@ -392,7 +392,7 @@ FMTOMO inversion (Stage 4).
 | Key | Type | Default | Allowed / constraints | Description |
 |---|---|---|---|---|
 | `package` | string | `extras` | `base` \| `extras` | 'base' FMTOMO or the patched 'extras' variant. |
-| `phases` | list[string] | `[P]` | `P` \| `S` \| `vpvs`; min length 1 | Phases to invert: [P], [P, S] (separate), or [vpvs] (joint Vp/Vs). |
+| `phases` | list[string] | `[P]` | `P` \| `S` \| `vpvs`; min length 1 | Phases to invert: [P], [P, S] (coupling set by joint.relocation), or [vpvs] (P and S inversions followed by the Vp/Vs inversion; needs relocate: nonlinear). |
 | `relocate` | string | `nonlinear` | `none` \| `linear` \| `nonlinear` | Event relocation during inversion ('nonlinear' uses gridloc). |
 | `iterations` | integer | `6` | >= 1 | Non-linear inversion iterations. |
 | `damping` | number | `50.0` | >= 0 | Damping (used when not running the trade-off). |
@@ -443,6 +443,7 @@ Joint P+S / Vp/Vs (experimental, Extras tomo3dj and tomo3dps).
 | `relocation_based_on` | literal | `1` | `1` \| `2` \| `3` \| `4` | gridlocj: 1 P only, 2 P + unique S, 3 P + S-P + unique S, 4 P and S. |
 | `vpvs_max_depth_km` | number | `50.0` | > 0 | mkvpvs: maximum depth of the Vp/Vs model, km. |
 | `sparse_fraction` | number | `0.1` | > 0 | vpvsinv: fraction of max G size for the sparse matrix. |
+| `relocation` | string \| null | `null` | `joint` \| `p_fixed_for_s` \| `independent` | How P and S share the hypocentres when both phases are inverted: 'joint' (coupled gridlocj relocation, Extras tomo3dj), 'p_fixed_for_s' (relocate with P, keep those hypocentres fixed in the S run) or 'independent' (separate runs). None: 'joint' for phases [vpvs], 'independent' for [P, S]. All modes but 'independent' (and [vpvs]) need relocate: nonlinear. Example: `joint` |
 
 ## `analysis`
 

@@ -17,10 +17,11 @@ import logging
 import os
 import shutil
 import sys
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from osv.fmtomo.controls import DIR_P, DIR_S, FmtomoControls, RunControls
@@ -123,17 +124,28 @@ def find_ak135_dir(explicit: str | os.PathLike[str] | None = None) -> Path:
     )
 
 
-def derive_src_dat(otimes: pd.DataFrame, n_blocks: int) -> pd.DataFrame:
-    """``src.dat`` table (block = receiver id, id = source id) from the valid observed times."""
-    ok = otimes[otimes["time"] > 0]
+def derive_src_dat(
+    otimes: pd.DataFrame, n_blocks: int, event_ids: Sequence[int] | None = None
+) -> pd.DataFrame:
+    """``src.dat`` table of the ``tomo3di`` geometry from the valid observed times.
+
+    One block per FMTOMO source (a station); ``gridloc`` reads each pick as
+    ``idtto, tto(i, idtto)``, so ``id`` is the event number.  ``event_ids`` gives it per
+    ``otimes`` row (``mapping["event_idx"]`` of :func:`osv.fmtomo.stage.to_nonlinear_geometry`);
+    by default the ``receiver`` column is used, which is the event only if the receivers are
+    numbered by event.  Rows are sorted by block then id.
+    """
+    ids = otimes["receiver"] if event_ids is None else np.asarray(event_ids)
+    ids = pd.Series(np.asarray(ids), otimes.index)
+    ok = (otimes["time"] > 0).to_numpy()
     df = pd.DataFrame(
         {
-            "block": ok["receiver"].astype("int64"),
-            "id": ok["source"].astype("int64"),
-            "time": ok["time"].astype(float),
-            "uncertainty": ok["uncertainty"].astype(float),
+            "block": otimes.loc[ok, "source"].astype("int64").to_numpy(),
+            "id": ids[ok].astype("int64").to_numpy(),
+            "time": otimes.loc[ok, "time"].astype(float).to_numpy(),
+            "uncertainty": otimes.loc[ok, "uncertainty"].astype(float).to_numpy(),
         }
-    ).sort_values(["block"], kind="stable")
+    ).sort_values(["block", "id"], kind="stable")
     df.attrs["n_blocks"] = int(n_blocks)
     return df.reset_index(drop=True)
 

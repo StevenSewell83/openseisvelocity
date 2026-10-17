@@ -54,7 +54,7 @@ exceed the compiled array limits (`osv doctor --config ...` shows `project:ieq/i
 rebuild with `./install.sh --velest-ieq ...`), or invalid input files. Fix the cause and run
 `osv velest-mc --force`.
 
-**VELEST divergence (`0% of runs converged`, `80 of 201 runs diverged`).** VELEST runs that stop
+**VELEST divergence (`0% of runs converged`, `1 of 201 runs diverged`).** VELEST runs that stop
 after "four backups" (RMS rose) are marked diverged. Occasional divergence from random starts is
 normal; the analysis only ranks runs that did not fail. If most diverge: raise the damping
 (`velest.vdamp`, `velest.stages`), narrow `velest.vp_bounds`, check the layering and the pick
@@ -87,9 +87,47 @@ fine. Increase `model3d.grid.dx_km`/`dy_km`/`dz_km` or accept that the model is 
 
 **L-curve corner at the edge of the sweep / chi-squared far from 1 / unconverged sweep.** Widen
 the swept range, raise `fmtomo.tradeoff.iterations`, or set `damping`/`smoothing` manually. A
-reduced chi-squared of 13-16 (as in the example) means the stated pick uncertainties are too small
+reduced chi-squared of about 10 (as in the example) means the stated pick uncertainties are too small
 or the 3-D model cannot explain the picks; interpret the model as a smooth correction to the 1-D
 model.
+
+### Borehole stations and station delays
+
+**Why are the VELEST station delays subtracted before the 3-D inversion, and should the
+borehole stations be excluded?** FMTOMO cannot invert for station terms. The default
+`model3d.apply_velest_station_delays: true` subtracts the Stage 2 delays from the observed
+times, so the station-scale near-surface signal, which a 0.5 km grid cannot resolve, does not
+have to be explained by the model. On rk-nm-2017 the station mean residuals correlate with the
+VELEST delays at r = 0.92. The stage 3 forward check may still warn about a mean residual and a
+weak correlation (r = 0.18) of the starting model's residuals with the delays; that compares
+different quantities and does not mean the delays should be dropped.
+
+The example was run three times with the same Stage 1-2 and 5 results (the scripts and logs are
+in `build/ab/`; `A` is the default):
+
+| | A: delays applied | B: delays off | C: `velest_station_delays_exclude: borehole` |
+|---|---|---|---|
+| Final P RMS (start 131-136 ms) | 56.7 ms | 49.5 ms | 53.9 ms |
+| Variance reduction | 81.9% | 86.7% | 83.2% |
+| dVp std in covered nodes | 2.7% | 8.3% | 3.1% |
+| Largest |dVp| | 14.5% | 49.9% | 15.4% |
+| Std of station mean residuals | 29.9 ms | 40.9 ms | 29.8 ms |
+| Validation median RMS 1-D / 3-D | 20.9 / 15.7 ms | 20.9 / 16.1 ms | 20.9 / 16.4 ms |
+| Validation events better in 3-D | 83% | 58% | 83% |
+
+Without the delays (B) the data are fitted better, but only because the model absorbs the
+delays into the shallowest nodes: perturbations of up to 50% appear around single stations
+(for example -11% at NS14 in the top layer) and the validation gain over the 1-D model shrinks.
+That is a better fit by the wrong mechanism, so B is not recommended. Excluding the borehole
+stations' delays (C) lowered their residuals a little but moved them into +4 to +10% near-surface
+anomalies (NS12, NS13) without improving validation (3-D median 16.4 ms against 15.7 ms). The
+delays are relative to the reference station and may partly double-count the sensor depth, but
+removing them does not fix that; it only moves the signal into the model.
+Keep the delays applied and, if a borehole station looks odd, check its StationXML depth and
+elevation (see [borehole stations](#data-preparation)) rather than switching the delay off. To repeat the
+comparison, set `model3d.apply_velest_station_delays` or `model3d.velest_station_delays_exclude`
+in a copy of the config with a separate `project.workdir`, link the Stage 1-2 and 5 directories and run
+`osv build-model`, `osv invert`, `osv analyse` and `osv validation`.
 
 ## Poor resolution
 

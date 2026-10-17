@@ -15,8 +15,12 @@ Open `report.html` of each stage first.
 
 ## Config keys
 
-- `fmtomo.phases`: `[P]`, or `[P, S]` (separate runs, one velocity type per FMTOMO run; Stage 3 must have
-  written S data).
+- `fmtomo.phases`: `[P]`; `[P, S]` (one velocity type per FMTOMO run; Stage 3 must have written S data;
+  how the two runs share hypocentres is set by `fmtomo.joint.relocation`); or `[vpvs]` (P and S inversions
+  followed by the direct Vp/Vs inversion). See "Joint P+S and Vp/Vs" below.
+- `fmtomo.joint.relocation` (`joint`, `p_fixed_for_s`, `independent`; default `independent` for `[P, S]`,
+  `joint` for `[vpvs]`), `fmtomo.joint.s_weight`, `sp_weight`, `relocation_based_on` (`gridlocj`),
+  `vpvs_max_depth_km`, `sparse_fraction` (Vp/Vs inversion).
 - `fmtomo.relocate`: `none`, `linear` (hypocentres inverted with the velocities, needs
   `fmtomo.source_uncertainty_km`, the a priori hypocentre uncertainty written to `sources.in`) or
   `nonlinear` (Extras `gridloc`; stations become the FMTOMO sources and events the receivers, see below).
@@ -47,6 +51,42 @@ Geometry: `none` and `linear` use the Stage 3 files unchanged (events are source
 surface interface (one direct path each), events are receivers; the `gridloc` search writes the time fields of all
 stations over the whole propagation grid (`arrtimes.dat`), which is large for fine grids: check the disk first.
 
+## Joint P+S and Vp/Vs (experimental, `package: extras`)
+
+Needs `relocate: nonlinear` and Stage 3 data of both phases (`osv build-model` writes S when `fmtomo.phases`
+contains `S` or `vpvs`). The Extras programs `jointimes`, `gridlocj`, `mkvpvs`, `frvpvs`, `vpvsinv` and
+`vpvsresids` must be built.
+
+| `phases` / `joint.relocation` | what runs |
+| --- | --- |
+| `[P]` | one P inversion (`run_P/`) |
+| `[P, S]`, `independent` | two separate inversions; each relocates the events on its own, so the P and S hypocentres of one event differ (`run_P/`, `run_S/`) |
+| `[P, S]`, `p_fixed_for_s` | P relocates; the P hypocentres and origin times are copied to the S run (S picks of events with a P pick), which keeps them fixed |
+| `[P, S]`, `joint` | `tomo3dj` loop (`osv.fmtomo.joint.run_joint_inversion`): `gridlocj` relocates every event with the P and S time fields together, then both velocity inversions run, each iteration |
+| `[vpvs]` | the P and S inversions of `joint.relocation` (default `joint`), then the linear Vp/Vs inversion from S-P times (`run_vpvs_inversion`: `mkvpvs`, `frvpvs`, `vpvsinv`, `vpvsresids`) on the final models, `fmtomo.iterations` iterations, `fmtomo.damping` and `smoothing` as regularisation |
+
+The coupled runs live in `06_invert/run_joint/` (`src.dat`, `jointimes.in`, `gridlocj.in`, `vpvs/`); when
+they are done `invert_p/` and `invert_s/` are moved to `run_P/` and `run_S/` so the outputs below, the plots
+and Stages 5-7 treat them like separate runs. Details of the wiring (`osv.fmtomo.stage.invert_coupled`):
+
+* P and S events are matched by `event_id` (Stage 3 numbers the events of each phase separately); the
+  fourth column of the station `sources.in` is the Extras receiver id (the P station index; S stations of
+  the same name share it, S-only stations get a number above the P count).
+* The sweep (`osv tradeoff`) is not coupled: it sweeps damping and smoothing of P and of S separately
+  (independent runs, no joint relocation) and the final run uses each phase's own pick. Damping is a
+  property of the velocity inversion, the coupling mainly changes the hypocentres. For `[vpvs]` the Vp/Vs
+  step is not swept.
+* Both phases must have the same propagation grid (Stage 3 guarantees it), at most 300 stations, 5000
+  events and 30 characters in file names (limits of the Extras programs).
+* `vpvs` needs `rays.dat` of the S run, so `save_rays` is forced on for it (kept files are still pruned by
+  the usual size rule).
+* Extra outputs: `joint_iterations.csv` (P and S misfit per iteration, also after relocation),
+  `vpvs_iterations.csv` (S-P misfit and Vp/Vs range), `final_vgrids_vpvs.in` (direct Vp/Vs grid),
+  `final_vgridvpvs.in` (node-wise Vp / Vs of the two solutions, for comparison), `coupled_mode` and the
+  Vp/Vs damping in `chosen_regularisation.json`. `final_model.nc` gains `vpvs` (the directly inverted ratio,
+  same grid as `vp`); Stage 5 figures and exports show `vp / vs` of the two models, as for separate runs.
+* QC: `vpvs_failed`, `vpvs_misfit_not_decreasing`, `vpvs_note` besides the usual per-phase checks.
+
 The disk guard (`osv.fmtomo.stage.MIN_FREE_GB`, 3 GB) stops the stages cleanly before a run if too little
 space is left; finished runs are kept.
 
@@ -54,7 +94,7 @@ space is left; finished runs are kept.
 
 | file | content |
 | --- | --- |
-| `final_model.nc` | dataset on the **full** FMTOMO grid (cushion nodes included, `attrs["n_cushion"]`): `vp` (`vs` if S was inverted), `vp_start`, `vp_bg` (and the `vs` equivalents), `dws` (`dws_vs`), `mask` (`mask_vs`; int8, 1 where `dws >= plotting.dws_mask_threshold`). DWS is 0 in the cushion |
+| `final_model.nc` | dataset on the **full** FMTOMO grid (cushion nodes included, `attrs["n_cushion"]`): `vp` (`vs` if S was inverted, `vpvs` for `phases: [vpvs]`), `vp_start`, `vp_bg` (and the `vs` equivalents), `dws` (`dws_vs`), `mask` (`mask_vs`; int8, 1 where `dws >= plotting.dws_mask_threshold`). DWS is 0 in the cushion |
 | `final_vgrids.in`, `final_sources.in` | final model and hypocentres in FMTOMO format (`_S` suffix for S). For `relocate: nonlinear` the hypocentres are the FMTOMO *receivers* |
 | `residuals_final.parquet` | per-pick residuals (observed - calculated) of the final model with event, station, distance, azimuth, `phase` |
 | `relocation.parquet` | hypocentre shifts against the Stage 3 positions (`dx_km`, `dy_km`, `dz_km`, `d3_km`, `dt_s`), `phase` |

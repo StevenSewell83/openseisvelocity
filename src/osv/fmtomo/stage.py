@@ -63,6 +63,13 @@ from osv.analysis.exports import export_model
 from osv.analysis.residuals import relocation_table, residual_table, residual_tables
 from osv.fmtomo import invert as _inv
 from osv.fmtomo.controls import ModelInfo, build_controls, phase_path
+from osv.fmtomo.joint import (
+    JointInversionResult,
+    VpVsInversionResult,
+    run_joint_inversion,
+    run_ps_inversions,
+    run_vpvs_inversion,
+)
 from osv.fmtomo.metrics import attach_metrics
 from osv.fmtomo.plots import (
     inversion_findings,
@@ -70,7 +77,12 @@ from osv.fmtomo.plots import (
     make_tradeoff_figures,
     tradeoff_findings,
 )
-from osv.fmtomo.rundir import RunInputs, assemble_run_dir
+from osv.fmtomo.rundir import (
+    RunInputs,
+    assemble_joint_run_dirs,
+    assemble_run_dir,
+    derive_src_dat,
+)
 from osv.fmtomo.tradeoff import TradeoffResult, run_tradeoff
 from osv.io.fmtomo import (
     PathSpec,
@@ -84,6 +96,7 @@ from osv.io.fmtomo import (
     read_vgrids,
 )
 from osv.io.fmtomo.controls import FrechetSpec
+from osv.io.fmtomo.extras import format_src_dat
 from osv.io.fmtomo.frechet import read_frechet
 from osv.report.checks import QCFinding
 from osv.stages import Stage, StageContext, StageError, register
@@ -99,8 +112,13 @@ __all__ = [
     "InvertStage",
     "PhaseData",
     "PhaseOutcome",
+    "CoupledOutcome",
     "TradeoffStage",
+    "common_event_numbers",
+    "station_ids",
+    "coupled_mode",
     "default_mapping",
+    "invert_coupled",
     "invert_phase",
     "load_phase_data",
     "nonlinear_src_dat",
@@ -295,20 +313,10 @@ def nonlinear_src_dat(otimes: pd.DataFrame, mapping: pd.DataFrame, n_sources: in
 
     Each block lists the valid picks as ``id`` = event number (``mapping["event_idx"]`` of
     :func:`to_nonlinear_geometry`), time and uncertainty, as ``gridloc`` reads them
-    (``READ(20,*) idtto, tto(i, idtto)``).  (The default of
-    :func:`osv.fmtomo.rundir.derive_src_dat` has blocks and ids the other way round.)
+    (``READ(20,*) idtto, tto(i, idtto)``); a thin wrapper of
+    :func:`osv.fmtomo.rundir.derive_src_dat`.
     """
-    ok = otimes["time"].to_numpy(float) > 0
-    df = pd.DataFrame(
-        {
-            "block": otimes.loc[ok, "source"].astype("int64").to_numpy(),
-            "id": mapping.loc[ok, "event_idx"].astype("int64").to_numpy(),
-            "time": otimes.loc[ok, "time"].astype(float).to_numpy(),
-            "uncertainty": otimes.loc[ok, "uncertainty"].astype(float).to_numpy(),
-        }
-    ).sort_values(["block", "id"], kind="stable")
-    df.attrs["n_blocks"] = int(n_sources)
-    return df.reset_index(drop=True)
+    return derive_src_dat(otimes, n_sources, mapping["event_idx"].to_numpy())
 
 
 def _with_uncertainty(sources: list[Source], km: float) -> list[Source]:
@@ -522,6 +530,30 @@ def invert_phase(
         mem_per_job_gb=mem_per_job_gb,
         stop_on_error=True,
     )
+    return _finish_phase(
+        run,
+        res,
+        pd_,
+        float(damping),
+        float(smoothing),
+        dws_threshold,
+        bool(fm.save_rays if keep_rays is None else keep_rays),
+        clean,
+    )
+
+
+def _finish_phase(
+    run: Path,
+    res: _inv.InversionResult,
+    pd_: PhaseData,
+    damping: float,
+    smoothing: float,
+    dws_threshold: float,
+    keep_rays: bool,
+    clean: bool,
+) -> PhaseOutcome:
+    """Metrics, coverage, residual and relocation tables of a finished run directory."""
+    phase = pd_.phase
     out = PhaseOutcome(
         phase,
         run,
@@ -529,8 +561,8 @@ def invert_phase(
         res.iterations,
         pd_.mapping,
         pd_.nonlinear,
-        damping=float(damping),
-        smoothing=float(smoothing),
+        damping=damping,
+        smoothing=smoothing,
     )
     try:
         out.iterations = attach_metrics(res)
@@ -553,8 +585,232 @@ def invert_phase(
         out.relocation = _per_event(out.relocation, pd_.mapping)
         out.hypocentres = _per_event(res.hypocentres, pd_.mapping, "source", "iter")
     if clean:
-        _clean_run(run, bool(fm.save_rays if keep_rays is None else keep_rays))
+        _clean_run(run, keep_rays)
     return out
+
+
+# ---------------------------------------------------------------------------------------
+# coupled P+S and Vp/Vs inversions (Extras tomo3dj / tomo3dps)
+# ---------------------------------------------------------------------------------------
+#: directory of the coupled run (``invert_p/``, ``invert_s/``, ``src.dat``, ``vpvs/``) in the stage
+#: directory; ``invert_p``/``invert_s`` are moved to ``run_P``/``run_S`` when the run is done
+COUPLED_DIR = "run_joint"
+
+
+def coupled_mode(fm: Any, phases: list[str]) -> str | None:
+    """How P and S are coupled for ``fm`` and the phases that have data.
+
+    ``None``: separate runs (``[P]``, ``[S]`` or ``[P, S]`` with ``joint.relocation`` independent).
+    Otherwise the relocation mode of the coupled run: ``joint`` (``tomo3dj``), ``p_fixed_for_s``,
+    or, for ``phases: [vpvs]``, the mode followed by the Vp/Vs inversion (``tomo3dps``), see
+    :func:`coupled_vpvs`.
+
+    Raises
+    ------
+    StageError
+        If the coupled run needs data or settings that are missing.
+    """
+    ph = list(fm.phases)
+    vpvs = "vpvs" in ph
+    mode = fm.joint.relocation or ("joint" if vpvs else "independent")
+    if not vpvs and (set(ph) != {"P", "S"} or mode == "independent"):
+        return None
+    if set(phases) != {"P", "S"}:
+        raise StageError(
+            "P+S coupled / Vp/Vs inversion needs Stage 3 data of both phases (S picks missing); "
+            "run `osv build-model` with fmtomo.phases containing S"
+        )
+    if fm.relocate != "nonlinear":
+        raise StageError(
+            "joint P+S and Vp/Vs inversions need fmtomo.relocate: nonlinear (stations as sources)"
+        )
+    if fm.package != "extras":
+        raise StageError("joint P+S and Vp/Vs inversions need fmtomo.package: extras")
+    return mode
+
+
+def coupled_vpvs(fm: Any) -> bool:
+    """True when the Vp/Vs inversion follows the P and S inversions (``phases: [vpvs]``)."""
+    return "vpvs" in list(fm.phases)
+
+
+def common_event_numbers(mappings: dict[str, pd.DataFrame]) -> dict[str, np.ndarray]:
+    """Event numbers shared by the P and S data (per row of each phase's mapping).
+
+    Stage 3 numbers the events of each phase separately (events without picks of the phase are
+    dropped), but the P/S association file of the Extras programs (``jointimes``) identifies the
+    same event by the same number.  P events keep their numbers, S events are matched by
+    ``event_id``; S-only events get new numbers after the P ones.
+    """
+    num: dict[str, int] = {}
+    for ph in ("P", "S"):
+        m = mappings[ph].drop_duplicates("event_idx").sort_values("event_idx")
+        for eid in m["event_id"].astype(str):
+            num.setdefault(eid, len(num) + 1)
+    return {
+        ph: m["event_id"].astype(str).map(num).to_numpy(dtype="int64") for ph, m in mappings.items()
+    }
+
+
+def station_ids(datas: dict[str, PhaseData]) -> dict[str, list[int]]:
+    """Receiver ids of the Extras ``sources.in`` (fourth column) of the P and S station-sources.
+
+    ``gridlocj`` forms S-P differences between the P and S pick of the same station: the id of a
+    P station is its own number, the id of an S station is the number of the P station of the
+    same name, or a number above the count of P stations (a station with S picks only).  Stations
+    are matched by the ``station`` column of the pick mappings (:func:`to_nonlinear_geometry`).
+    """
+
+    def names(d: PhaseData) -> dict[int, str]:
+        m = d.mapping.drop_duplicates("source_idx")
+        return dict(zip(m["source_idx"].astype(int), m["station"].astype(str), strict=True))
+
+    n_p = len(datas["P"].inputs.sources)
+    p_index = {name: i for i, name in names(datas["P"]).items()}
+    s_names = names(datas["S"])
+    return {
+        "P": list(range(1, n_p + 1)),
+        "S": [
+            p_index.get(s_names.get(j, ""), n_p + j)
+            for j in range(1, len(datas["S"].inputs.sources) + 1)
+        ],
+    }
+
+
+@dataclass
+class CoupledOutcome:
+    """Results of :func:`invert_coupled`: per-phase outcomes and the coupled-run results."""
+
+    mode: str
+    root: Path
+    outcomes: dict[str, PhaseOutcome]
+    joint: JointInversionResult | None = None
+    vpvs: VpVsInversionResult | None = None
+    vpvs_model: xr.DataArray | None = None
+    notes: list[str] = field(default_factory=list)
+
+
+def invert_coupled(
+    out_dir: str | Path,
+    datas: dict[str, PhaseData],
+    fm: Any,
+    reg: dict[str, dict[str, Any]],
+    n_jobs: int = 1,
+    *,
+    mode: str,
+    vpvs: bool = False,
+    n_iter: int | None = None,
+    dws_threshold: float = 10.0,
+    clean: bool = True,
+    timeout: float | None = None,
+    mem_per_job_gb: float | None = None,
+) -> CoupledOutcome:
+    """Run the P and S inversions coupled through the Extras programs, optionally plus Vp/Vs.
+
+    ``mode`` is ``joint`` (:func:`osv.fmtomo.joint.run_joint_inversion`: coupled ``gridlocj``
+    relocation, P and S velocity inversions each iteration) or ``p_fixed_for_s`` (P first with its
+    relocation, its hypocentres fixed in the S run; :func:`~osv.fmtomo.joint.run_ps_inversions`).
+    With ``vpvs`` the direct Vp/Vs inversion (:func:`~osv.fmtomo.joint.run_vpvs_inversion`,
+    ``tomo3dps``) follows on the final P and S models.  Both geometries are the nonlinear
+    (stations as sources) ones from :func:`load_phase_data`; ``fm.relocate`` must be ``nonlinear``.
+
+    The run directory is ``<out_dir>/run_joint`` (``src.dat``, ``vpvs/``); the phase
+    directories are moved to ``<out_dir>/run_P`` and ``run_S`` (the names Stages 4-6 use) and
+    post-processed as in :func:`invert_phase`.  ``reg`` holds the damping and smoothing per phase;
+    the Vp/Vs inversion uses ``fm.damping`` and ``fm.smoothing`` (it is not part of the trade-off).
+    """
+    from osv.fmtomo.controls import DIR_P, DIR_S
+
+    if mode not in ("joint", "p_fixed_for_s"):
+        raise StageError(f"unknown coupled relocation mode {mode!r}")
+    out_dir = Path(out_dir)
+    root = out_dir / COUPLED_DIR
+    check_disk(out_dir)
+    for d in (root, out_dir / "run_P", out_dir / "run_S"):
+        shutil.rmtree(d, ignore_errors=True)
+    n_iter = int(fm.iterations if n_iter is None else n_iter)
+    update: dict[str, Any] = {"phases": ["P", "S"]}
+    if vpvs:
+        update["save_rays"] = True  # the Vp/Vs inversion reads the S rays
+    ctls = {
+        ph: build_controls(
+            fm.model_copy(
+                update={
+                    **update,
+                    "damping": float(reg[ph]["damping"]),
+                    "smoothing": float(reg[ph]["smoothing"]),
+                }
+            ),
+            datas[ph].model_info,
+        )
+        for ph in ("P", "S")
+    }
+    ctl = dataclasses.replace(ctls["P"], runs={"P": ctls["P"].runs["P"], "S": ctls["S"].runs["S"]})
+    sid = station_ids(datas)
+    inputs = {
+        ph: dataclasses.replace(
+            datas[ph].inputs,
+            sources=[
+                dataclasses.replace(src, extra_id=k)
+                for src, k in zip(datas[ph].inputs.sources, sid[ph], strict=True)
+            ],
+        )
+        for ph in ("P", "S")
+    }
+    assemble_joint_run_dirs(root, inputs, ctl)
+    ids = common_event_numbers({ph: datas[ph].mapping for ph in ("P", "S")})
+    for ph, sub in (("P", DIR_P), ("S", DIR_S)):
+        d, i = datas[ph], datas[ph].inputs
+        sd = nonlinear_src_dat(i.otimes, d.mapping.assign(event_idx=ids[ph]), len(i.sources))
+        (root / sub / "src.dat").write_text(format_src_dat(sd))
+        d.mapping.to_csv(root / sub / "mapping.csv", index=False)
+    kw: dict[str, Any] = {"timeout": timeout, "mem_per_job_gb": mem_per_job_gb}
+    jres: JointInversionResult | None = None
+    if mode == "joint":
+        jres = run_joint_inversion(root, ctl, n_iter, n_jobs, True, **kw)
+        res = {"P": jres.p, "S": jres.s}
+        notes = list(jres.flags)
+    else:
+        pres = run_ps_inversions(
+            root / DIR_P, root / DIR_S, ctl, n_iter, n_jobs, True, relocation=mode, **kw
+        )
+        res = {"P": pres.p, "S": pres.s}
+        notes = list(pres.notes)
+    vres: VpVsInversionResult | None = None
+    vmodel: xr.DataArray | None = None
+    if vpvs:
+        vfm = fm.model_copy(update={"phases": ["vpvs"], "relocate": "none", "save_rays": True})
+        vctl = build_controls(vfm, datas["P"].model_info)
+        vres = run_vpvs_inversion(root, vctl, n_iter, True, forward=True, n_jobs=n_jobs, **kw)
+        if vres.final_model is not None:
+            vmodel = (
+                read_vgrids(vres.final_model)
+                .get(1, 1)["velocity"]
+                .transpose("depth", "lat", "lon")
+                .rename("vpvs")
+            )
+        notes.extend(vres.flags)
+    outcomes: dict[str, PhaseOutcome] = {}
+    for ph, sub in (("P", DIR_P), ("S", DIR_S)):
+        oc = _finish_phase(
+            root / sub,
+            res[ph],
+            datas[ph],
+            float(reg[ph]["damping"]),
+            float(reg[ph]["smoothing"]),
+            dws_threshold,
+            bool(fm.save_rays),
+            clean,
+        )
+        outcomes[ph] = oc
+    for ph, sub in (("P", DIR_P), ("S", DIR_S)):  # the names the later stages use
+        run = out_dir / f"run_{ph}"
+        shutil.move(root / sub, run)
+        outcomes[ph].run_dir = run
+        outcomes[ph].result.run_dir = run
+    if clean and (root / "vpvs").is_dir():
+        _clean_run(root / "vpvs", False)
+    return CoupledOutcome(mode, root, outcomes, jres, vres, vmodel, notes)
 
 
 # ---------------------------------------------------------------------------------------
@@ -740,6 +996,26 @@ def _chosen_values(
     return out
 
 
+def _vpvs_findings(res: VpVsInversionResult) -> list[QCFinding]:
+    """QC of the Vp/Vs inversion: failure, no misfit reduction, flagged iterations."""
+    out: list[QCFinding] = []
+    if not res.success:
+        out.append(QCFinding("vpvs_failed", "fail", "the Vp/Vs inversion stopped early"))
+    if len(res.iterations) > 1 and res.final_rms_s >= res.initial_rms_s:
+        out.append(
+            QCFinding(
+                "vpvs_misfit_not_decreasing",
+                "warn",
+                f"S-P misfit {res.initial_rms_s:.4f} s -> {res.final_rms_s:.4f} s: the Vp/Vs "
+                "inversion did not reduce it (damping too strong, or too few S-P pairs)",
+            )
+        )
+    for f in res.flags:
+        if not f.startswith("error"):
+            out.append(QCFinding("vpvs_note", "warn", f"Vp/Vs {f}"))
+    return out
+
+
 def _full_grid(da: xr.DataArray, like: xr.DataArray) -> xr.DataArray:
     """Pad an interior-grid array with zeros onto the full grid of ``like`` (by position)."""
     arr = da.transpose("depth", "lat", "lon").to_numpy()
@@ -751,9 +1027,16 @@ def _full_grid(da: xr.DataArray, like: xr.DataArray) -> xr.DataArray:
 
 
 def _write_model(
-    path: Path, start: xr.Dataset, outcomes: dict[str, PhaseOutcome], threshold: float
+    path: Path,
+    start: xr.Dataset,
+    outcomes: dict[str, PhaseOutcome],
+    threshold: float,
+    vpvs: xr.DataArray | None = None,
 ) -> xr.Dataset:
-    """``final_model.nc`` on the full grid (see the module docstring)."""
+    """``final_model.nc`` on the full grid (see the module docstring).
+
+    ``vpvs`` (Vp/Vs inversion) is stored as ``vpvs``; without it Stage 5 derives ``vp / vs``.
+    """
     ds = start.copy()
     names = ["vp", "vp_bg"] + (["vs", "vs_bg"] if "S" in outcomes else [])
     keep = [v for v in names if v in ds]
@@ -785,6 +1068,15 @@ def _write_model(
                     long_name=f"{v} coverage mask (dws >= {threshold:g})", flag_values="0 1"
                 )
             )
+    if vpvs is not None:
+        arr = vpvs.to_numpy()
+        if arr.shape != tuple(out["vp"].shape):
+            raise StageError(f"Vp/Vs grid {arr.shape} differs from the model grid")
+        out["vpvs"] = (
+            ("depth", "lat", "lon"),
+            arr,
+            {"units": "1", "long_name": "Vp/Vs ratio (direct inversion of S-P times)"},
+        )
     out.attrs.update(dws_threshold=float(threshold), n_cushion=int(start.attrs.get("n_cushion", 1)))
     out.to_netcdf(path)
     return out
@@ -822,6 +1114,67 @@ class InvertStage(Stage):
         outcomes: dict[str, PhaseOutcome] = {}
         findings: list[QCFinding] = []
         thr = float(cfg.plotting.dws_mask_threshold)
+        mode = coupled_mode(fm, phases)
+        co: CoupledOutcome | None = None
+        if mode is None:
+            self._run_separate(ctx, phases, reg, outcomes, findings, thr)
+        else:
+            datas = {ph: load_phase_data(s3.dir, ph, fm) for ph in phases}
+            ctx.logger.info(
+                "coupled P+S inversion (%s%s): %d iterations, damping P %g / S %g, smoothing "
+                "P %g / S %g",
+                mode,
+                " + Vp/Vs" if coupled_vpvs(fm) else "",
+                fm.iterations,
+                reg["P"]["damping"],
+                reg["S"]["damping"],
+                reg["P"]["smoothing"],
+                reg["S"]["smoothing"],
+            )
+            co = invert_coupled(
+                out,
+                datas,
+                fm,
+                reg,
+                ctx.n_jobs,
+                mode=mode,
+                vpvs=coupled_vpvs(fm),
+                dws_threshold=thr,
+            )
+            outcomes = co.outcomes
+            for ph, oc in outcomes.items():
+                self._collect(ctx, ph, oc, len(phases), findings, fm)
+            for n in co.notes:
+                ctx.logger.warning("coupled run: %s", n)
+            if co.vpvs is not None:
+                findings.extend(_vpvs_findings(co.vpvs))
+        start = _load_start(s3.dir)
+        model = _write_model(
+            out / "final_model.nc", start, outcomes, thr, None if co is None else co.vpvs_model
+        )
+        self._write_tables(ctx, outcomes, reg)
+        self._exports(ctx, model, outcomes)
+        if co is not None:
+            self._write_coupled(ctx, co)
+        for f in findings:
+            ctx.add_check(f)
+        self._summary(ctx, outcomes, reg)
+        if co is not None:
+            self._summary_coupled(ctx, co)
+        self.plot(ctx)
+
+    # ------------------------------------------------------------------ runs
+    def _run_separate(
+        self,
+        ctx: StageContext,
+        phases: list[str],
+        reg: dict[str, dict[str, Any]],
+        outcomes: dict[str, PhaseOutcome],
+        findings: list[QCFinding],
+        thr: float,
+    ) -> None:
+        fm = ctx.config.fmtomo
+        s3 = ctx.upstream("build_model")
         for ph in phases:
             data = load_phase_data(s3.dir, ph, fm)
             ctx.logger.info(
@@ -833,7 +1186,7 @@ class InvertStage(Stage):
                 fm.relocate,
             )
             oc = invert_phase(
-                out / f"run_{ph}",
+                ctx.stage_dir / f"run_{ph}",
                 data,
                 fm,
                 reg[ph]["damping"],
@@ -843,24 +1196,60 @@ class InvertStage(Stage):
                 dws_threshold=thr,
             )
             outcomes[ph] = oc
-            for n in oc.notes:
-                ctx.logger.warning("%s: %s", ph, n)
-                findings.append(QCFinding("inversion_note", "warn", f"{ph}: {n}"))
-            findings.extend(
-                inversion_findings(
-                    oc.iterations,
-                    float(fm.min_velocity_km_s),
-                    ph if len(phases) > 1 else "",
-                )
+            self._collect(ctx, ph, oc, len(phases), findings, fm)
+
+    @staticmethod
+    def _collect(
+        ctx: StageContext,
+        ph: str,
+        oc: PhaseOutcome,
+        n_phases: int,
+        findings: list[QCFinding],
+        fm: Any,
+    ) -> None:
+        for n in oc.notes:
+            ctx.logger.warning("%s: %s", ph, n)
+            findings.append(QCFinding("inversion_note", "warn", f"{ph}: {n}"))
+        findings.extend(
+            inversion_findings(
+                oc.iterations, float(fm.min_velocity_km_s), ph if n_phases > 1 else ""
             )
-        start = _load_start(s3.dir)
-        model = _write_model(out / "final_model.nc", start, outcomes, thr)
-        self._write_tables(ctx, outcomes, reg)
-        self._exports(ctx, model, outcomes)
-        for f in findings:
-            ctx.add_check(f)
-        self._summary(ctx, outcomes, reg)
-        self.plot(ctx)
+        )
+
+    @staticmethod
+    def _write_coupled(ctx: StageContext, co: CoupledOutcome) -> None:
+        out = ctx.stage_dir
+        cj = out / "chosen_regularisation.json"
+        info = json.loads(cj.read_text())
+        info["coupled_mode"] = co.mode
+        if co.vpvs is not None:
+            fm = ctx.config.fmtomo
+            info["vpvs"] = {"damping": float(fm.damping), "smoothing": float(fm.smoothing)}
+        cj.write_text(json.dumps(info, indent=1))
+        if co.joint is not None:
+            co.joint.iterations.to_csv(out / "joint_iterations.csv", index=False)
+        if co.vpvs is not None:
+            co.vpvs.iterations.drop(columns=["dir"], errors="ignore").to_csv(
+                out / "vpvs_iterations.csv", index=False
+            )
+            if co.vpvs.ratio_of_vp_vs_model is not None and co.vpvs.ratio_of_vp_vs_model.exists():
+                shutil.copyfile(co.vpvs.ratio_of_vp_vs_model, out / "final_vgridvpvs.in")
+            if co.vpvs.final_model is not None:
+                shutil.copyfile(co.vpvs.final_model, out / "final_vgrids_vpvs.in")
+
+    @staticmethod
+    def _summary_coupled(ctx: StageContext, co: CoupledOutcome) -> None:
+        s = ctx.summary
+        s["coupled_mode"] = co.mode
+        if co.joint is not None:
+            s["joint_rms_start_ms"] = [round(float(x), 2) for x in co.joint.initial_rms_ms]
+            s["joint_rms_final_ms"] = [round(float(x), 2) for x in co.joint.final_rms_ms]
+        if co.vpvs is not None and len(co.vpvs.iterations):
+            s["vpvs_rms_start_s"] = round(co.vpvs.initial_rms_s, 4)
+            s["vpvs_rms_final_s"] = round(co.vpvs.final_rms_s, 4)
+            it = co.vpvs.iterations.iloc[-1]
+            s["vpvs_range"] = [round(float(it["vpvs_min"]), 3), round(float(it["vpvs_max"]), 3)]
+            s["vpvs_mean"] = round(float(it["vpvs_mean"]), 3)
 
     # ------------------------------------------------------------------ outputs
     @staticmethod
