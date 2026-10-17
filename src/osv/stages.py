@@ -91,7 +91,7 @@ DEFAULT_CONFIG_SECTIONS: dict[str, tuple[str, ...]] = {
     "analyse": ("plotting",),
     "resolution": ("project.random_seed", "resolution"),
     "validation": ("project.random_seed", "velest", "fmtomo"),
-    "report": ("project", "plotting"),
+    "report": ("project", "plotting", "report"),
 }
 
 #: Modules the CLI imports (if present) so their stages get registered.
@@ -100,7 +100,7 @@ STAGE_MODULES: dict[str, str] = {
     "velest_mc": "osv.velest.stage",
     "velest_analyse": "osv.velest.stage",
     "build_model": "osv.model3d.stage",
-    "tradeoff": "osv.fmtomo.tradeoff_stage",
+    "tradeoff": "osv.fmtomo.stage",
     "invert": "osv.fmtomo.stage",
     "analyse": "osv.analysis.stage",
     "resolution": "osv.resolution.stage",

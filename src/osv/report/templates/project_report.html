@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ project }} - osv project report</title>
+{% include "_style.html" %}
+<style>
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(18rem,1fr));gap:.8rem}
+.kv td:first-child{color:var(--mut);width:55%}
+.card{background:var(--card);border-radius:6px;padding:.4rem .9rem;margin:.6rem 0}
+details>summary{cursor:pointer;color:var(--mut)}
+.num{font-variant-numeric:tabular-nums}
+</style>
+</head><body>
+<h1>{{ project }}</h1>
+<p class="meta">openSeisVelocity {{ osv_version }} &middot; report generated {{ generated }} &middot; <code>{{ workdir }}</code></p>
+<table class="kv">
+<tr><td>Config hash</td><td><code>{{ config_hash[:16] if config_hash else "-" }}</code></td></tr>
+<tr><td>osv version(s) used</td><td>{{ stage_versions | join(", ") or "-" }}</td></tr>
+<tr><td>Run dates</td><td>{{ first_start }} to {{ last_finish }}</td></tr>
+<tr><td>Tools</td><td>{% for t, r in tools.items() %}{{ t }} <span class="meta" title="{{ r.path }}">({{ r.sha }})</span>{% if not loop.last %}, {% endif %}{% else %}-{% endfor %}</td></tr>
+<tr><td>Stages complete</td><td>{{ n_run }} of {{ stages | length }}
+{% if n_fail %}<span class="badge fail">{{ n_fail }} fail</span> {% endif %}{% if n_warn %}<span class="badge warn">{{ n_warn }} warn</span>{% endif %}</td></tr>
+</table>
+
+<h2>Pipeline status</h2>
+<table><tr><th>Stage</th><th>Status</th><th>Run time</th><th>Last run</th><th>QC</th><th>Report</th></tr>
+{% for s in stages %}
+<tr><td><a href="#{{ s.name }}">{{ s.dir }}</a></td>
+<td><span class="badge {{ s.status | replace(' ', '-') }}">{{ s.status }}</span></td>
+<td class="num">{{ s.wall_text }}</td><td>{{ s.finished }}</td>
+<td>{% if s.n_fail %}<span class="badge fail">{{ s.n_fail }} fail</span> {% endif %}{% if s.n_warn %}<span class="badge warn">{{ s.n_warn }} warn</span>{% endif %}</td>
+<td>{% if s.report_href %}<a href="{{ s.report_href }}">report</a>{% endif %}</td></tr>
+{% endfor %}
+</table>
+
+<h2>QC failures and warnings</h2>
+{% set ns = namespace(any=false) %}
+{% for s in stages %}{% set flagged = s.checks | rejectattr("severity", "equalto", "info") | list %}
+{% if flagged %}{% set ns.any = true %}
+<h3><a href="#{{ s.name }}">{{ s.name }}</a></h3>
+{% for c in flagged %}<div class="check {{ c.severity }}"><strong>{{ c.severity | upper }}</strong> <code>{{ c.code }}</code>: {{ c.message }}{% if c.count %} ({{ c.count }}){% endif %}</div>
+{% endfor %}{% endif %}
+{% if s.status == "failed" and s.error %}{% set ns.any = true %}
+<div class="check fail"><strong>STAGE FAILED</strong> {{ s.name }}: {{ s.error.message }}</div>{% endif %}
+{% endfor %}
+{% if not ns.any %}<p>No QC failures or warnings.</p>{% endif %}
+
+<h2>Stages</h2>
+{% for s in stages %}
+<h3 id="{{ s.name }}">{{ s.dir }} <span class="badge {{ s.status | replace(' ', '-') }}">{{ s.status }}</span></h3>
+{% if s.status == "not run" %}<p class="meta">This stage has not been run.</p>
+{% else %}
+{% if s.report_href %}<p><a href="{{ s.report_href }}">Full {{ s.name }} report</a></p>{% endif %}
+<div class="grid">
+{% if s.headlines %}<div class="card"><table class="kv">{% for k, v in s.headlines %}<tr><td>{{ k }}</td><td class="num">{{ v }}</td></tr>{% endfor %}</table></div>{% endif %}
+{% if s.model_table %}<div class="card"><table class="num"><tr><th>Depth top (km)</th><th>Vp (km/s)</th><th>Vs (km/s)</th></tr>
+{% for r in s.model_table %}<tr><td>{{ r.depth }}</td><td>{{ r.vp }}</td><td>{{ r.vs }}</td></tr>{% endfor %}</table></div>{% endif %}
+</div>
+{% for f in s.figures %}<figure><img src="{{ f.src }}" alt="{{ f.name }}" loading="lazy"><figcaption>{{ f.caption }}</figcaption></figure>
+{% endfor %}
+{% endif %}
+{% endfor %}
+
+<h2>Exports</h2>
+{% set ns2 = namespace(any=false) %}
+{% for s in stages if s.export_links %}{% set ns2.any = true %}
+<p><strong>{{ s.dir }}</strong>: {% for name, href in s.export_links %}<a href="{{ href }}">{{ name }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+{% endfor %}
+{% if not ns2.any %}<p class="meta">No exportable files found.</p>{% endif %}
+
+{% if config_json %}<h2>Config snapshot</h2>
+<details><summary>Show resolved configuration</summary><pre>{{ config_json }}</pre></details>{% endif %}
+</body></html>

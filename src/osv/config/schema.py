@@ -1225,6 +1225,32 @@ class PlottingConfig(_Base):
     )
 
 
+class AnalysisQCConfig(_Base):
+    """QC thresholds of the Stage 5 checks (a failed check is a warning, not an error)."""
+
+    min_variance_reduction_pct: float = F(
+        10.0, "Warn when the inversion reduces the data variance by less than this (%)."
+    )
+    moved_km: float = F(1.0, "Hypocentre shift that counts as 'moved' (km).", gt=0)
+    max_moved_fraction: float = F(
+        0.25, "Warn when more than this fraction of events moved by over moved_km.", ge=0, le=1
+    )
+    max_change_outside_coverage_pct: float = F(
+        10.0,
+        "Warn when more than 5% of the nodes without ray coverage changed by over this (%).",
+        gt=0,
+    )
+    min_covered_fraction: float = F(
+        0.05, "Warn when the covered volume fraction is below this.", ge=0, le=1
+    )
+
+
+class AnalysisConfig(_Base):
+    """Analysis of the inversion outputs (Stage 5)."""
+
+    qc: AnalysisQCConfig = FF(AnalysisQCConfig, "QC thresholds of the checks.")
+
+
 class ValidationConfig(_Base):
     """Validation relocation of the held-out events (Stage 7)."""
 
@@ -1248,6 +1274,15 @@ class ValidationConfig(_Base):
     )
 
 
+class ReportConfig(_Base):
+    """Project report (the ``report`` stage)."""
+
+    embed_images: bool = F(
+        False,
+        "Embed figures as base64 in index.html (one portable file) instead of linking them.",
+    )
+
+
 # ---------------------------------------------------------------------------
 # top level
 # ---------------------------------------------------------------------------
@@ -1265,6 +1300,8 @@ class OSVConfig(_Base):
     velest: VelestConfig = FF(VelestConfig, "VELEST Monte Carlo 1-D inversion (Stage 2).")
     model3d: Model3DConfig = FF(Model3DConfig, "3-D starting model (Stage 3).")
     fmtomo: FmtomoConfig = FF(FmtomoConfig, "FMTOMO inversion (Stage 4).")
+    analysis: AnalysisConfig = FF(AnalysisConfig, "Analysis of the inversion (Stage 5).")
     resolution: ResolutionConfig = FF(ResolutionConfig, "Resolution tests (Stage 6).")
     validation: ValidationConfig = FF(ValidationConfig, "Validation relocation (Stage 7).")
     plotting: PlottingConfig = FF(PlottingConfig, "Figure settings.")
+    report: ReportConfig = FF(ReportConfig, "Project report (final stage).")

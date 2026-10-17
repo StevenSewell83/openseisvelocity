@@ -61,6 +61,9 @@ class DAnalyse(Stage):
 
 @pytest.fixture(autouse=True)
 def _registry() -> Iterator[None]:
+    # import the real stage modules first, so the CLI's discover() is a no-op and cannot
+    # replace the dummy stages registered below
+    stages.discover()
     saved = dict(stages._REGISTRY)
     stages._REGISTRY.clear()
     for c in (DPrep, DMc, DAnalyse):
