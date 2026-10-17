@@ -1,0 +1,946 @@
+ initializing propagation grid ......finished
+  initializing velocity grids  ......finished
+       initializing interfaces ......finished
+ intersection            1 :        1681  nodes found
+ intersection            2 :        1929  nodes found
+ intersection            3 :        1681  nodes found
+ main grid intersections initialized
+ main grid regions initialized
+ velocities on main grid, its intersections and regions evaluated
+ reading source           1
+ source           1  is located in region            1
+ reading source           2
+ source           2  is located in region            1
+ reading source           3
+ source           3  is located in region            1
+ reading source           4
+ source           4  is located in region            1
+ reading source           5
+ source           5  is located in region            1
+ reading source           6
+ source           6  is located in region            1
+ reading source           7
+ source           7  is located in region            1
+ reading source           8
+ source           8  is located in region            1
+ reading source           9
+ source           9  is located in region            1
+ reading source          10
+ reading source          11
+ reading source          12
+ reading source          13
+ reading source          14
+ reading source          15
+ reading source          16
+ reading source          17
+ reading source          18
+ reading source          19
+ reading source          20
+ reading source          21
+ finished reading sources
+ finished reading receivers
+ finsihed initializing sources and receivers
+
+ starting to initialize local source           1
+ intersection            1 :        2601  nodes found
+ intersection            2 :           0  nodes found
+ intersection            3 :           0  nodes found
+ intersections found
+ nodes of refined source grid tagged
+ refined source region           1  defined, nnode =       67626
+ sregion           2 does not exist in refined source grid
+ refined velocities transferred
+ --------------------------------------------------
+ starting source initialization for vtype =           1
+ source does not lie on grid
+ source lies in a cut cell
+ refined source initialized in sregion           1
+ propagation through region           1  finished
+ refined source region           1  swept
+ refined grid for source           1 took   4.50999998E-02  sec
+
+ shortest time on refined grid boundary is   4.5092908559881364     
+ before transefr refined region
+ transferred times from fine grid to coarse for region           1
+ narrow band created in region           1 alive/nb         103         106
+ propagation through region           1  finished
+ results written to timefield           1
+ timefields in main grid regions connected to the source established, vtype=           1
+     timefields on upward init path for vtype  1:    1
+   timefields on downward init path for vtype  1:    1
+ # time fields from initialization           1
+
+
+ path   1    leg  1  using source time field   1
+ path   1  leg   2  from interface   2   to   1  through region   1
+ previous step is a source time field
+ propagation through region           1  finished
+         425  starting intersection nodes received a turning ray
+ created new time field           2
+
+
+ path   2    leg  1  using source time field   1
+ path    1  timefields    1    2
+ path    2  timefields    1
+ starting the ray tracing for source           1
+  traced ray   1 to source   1  from receiver   1  t=   14.9411    F    F
+ getting partials for rec           1 ray           1
+  traced ray   2 to source   1  from receiver   1  t=    5.0990    F    F
+ getting partials for rec           1 ray           2
+  traced ray   1 to source   1  from receiver   2  t=   15.3296    F    F
+ getting partials for rec           2 ray           1
+  traced ray   2 to source   1  from receiver   2  t=    4.9092    F    F
+ getting partials for rec           2 ray           2
+  traced ray   1 to source   1  from receiver   3  t=   17.1654    F    F
+ getting partials for rec           3 ray           1
+  traced ray   2 to source   1  from receiver   3  t=    9.5369    F    F
+ getting partials for rec           3 ray           2
+  traced ray   1 to source   1  from receiver   4  t=   19.8458    F    F
+ getting partials for rec           4 ray           1
+  traced ray   2 to source   1  from receiver   4  t=   14.9249    F    F
+ getting partials for rec           4 ray           2
+  traced ray   1 to source   1  from receiver   5  t=   23.5773    F    F
+ getting partials for rec           5 ray           1
+  traced ray   2 to source   1  from receiver   5  t=   20.4763    F    F
+ getting partials for rec           5 ray           2
+  traced ray   1 to source   1  from receiver   6  t=   28.0019    F    F
+ getting partials for rec           6 ray           1
+  traced ray   2 to source   1  from receiver   6  t=   26.0822    F    F
+ getting partials for rec           6 ray           2
+  traced ray   1 to source   1  from receiver   7  t=   32.8943    F    F
+ getting partials for rec           7 ray           1
+  traced ray   2 to source   1  from receiver   7  t=   31.7003    F    F
+ getting partials for rec           7 ray           2
+  traced ray   1 to source   1  from receiver   8  t=   37.9672    F    F
+ getting partials for rec           8 ray           1
+  traced ray   2 to source   1  from receiver   8  t=   37.2719    F    F
+ getting partials for rec           8 ray           2
+  traced ray   1 to source   1  from receiver   9  t=   42.9118    F    F
+ getting partials for rec           9 ray           1
+  traced ray   2 to source   1  from receiver   9  t=   42.6813    F    F
+ getting partials for rec           9 ray           2
+  traced ray   1 to source   1  from receiver  10  t=   47.9943    F    F
+ getting partials for rec          10 ray           1
+  traced ray   2 to source   1  from receiver  10  t=   47.9314    F    F
+ getting partials for rec          10 ray           2
+  traced ray   1 to source   1  from receiver  11  t=   15.1373    F    F
+ getting partials for rec          11 ray           1
+  traced ray   2 to source   1  from receiver  11  t=    3.3056    F    F
+ getting partials for rec          11 ray           2
+  traced ray   1 to source   1  from receiver  12  t=   14.9571    F    F
+ getting partials for rec          12 ray           1
+  traced ray   2 to source   1  from receiver  12  t=    3.0235    F    F
+ getting partials for rec          12 ray           2
+  traced ray   1 to source   1  from receiver  13  t=   16.1100    F    F
+ getting partials for rec          13 ray           1
+  traced ray   2 to source   1  from receiver  13  t=    8.7523    F    F
+ getting partials for rec          13 ray           2
+  traced ray   1 to source   1  from receiver  14  t=   18.8835    F    F
+ getting partials for rec          14 ray           1
+  traced ray   2 to source   1  from receiver  14  t=   14.4374    F    F
+ getting partials for rec          14 ray           2
+  traced ray   1 to source   1  from receiver  15  t=   23.0379    F    F
+ getting partials for rec          15 ray           1
+  traced ray   2 to source   1  from receiver  15  t=   20.1897    F    F
+ getting partials for rec          15 ray           2
+  traced ray   1 to source   1  from receiver  16  t=   27.7673    F    F
+ getting partials for rec          16 ray           1
+  traced ray   2 to source   1  from receiver  16  t=   25.9031    F    F
+ getting partials for rec          16 ray           2
+  traced ray   1 to source   1  from receiver  17  t=   32.5287    F    F
+ getting partials for rec          17 ray           1
+  traced ray   2 to source   1  from receiver  17  t=   31.5560    F    F
+ getting partials for rec          17 ray           2
+  traced ray   1 to source   1  from receiver  18  t=   37.4781    F    F
+ getting partials for rec          18 ray           1
+  traced ray   2 to source   1  from receiver  18  t=   37.0277    F    F
+ getting partials for rec          18 ray           2
+  traced ray   1 to source   1  from receiver  19  t=   42.7723    F    F
+ getting partials for rec          19 ray           1
+  traced ray   2 to source   1  from receiver  19  t=   42.5260    F    F
+ getting partials for rec          19 ray           2
+  traced ray   1 to source   1  from receiver  20  t=   48.1506    T    F
+ getting partials for rec          20 ray           1
+  traced ray   2 to source   1  from receiver  20  t=   48.0214    F    F
+ getting partials for rec          20 ray           2
+  traced ray   1 to source   1  from receiver  21  t=   16.8418    F    F
+ getting partials for rec          21 ray           1
+  traced ray   2 to source   1  from receiver  21  t=    7.5821    F    F
+ getting partials for rec          21 ray           2
+  traced ray   1 to source   1  from receiver  22  t=   16.5134    F    F
+ getting partials for rec          22 ray           1
+  traced ray   2 to source   1  from receiver  22  t=    7.4249    F    F
+ getting partials for rec          22 ray           2
+  traced ray   1 to source   1  from receiver  23  t=   17.3945    F    F
+ getting partials for rec          23 ray           1
+  traced ray   2 to source   1  from receiver  23  t=   10.9149    F    F
+ getting partials for rec          23 ray           2
+  traced ray   1 to source   1  from receiver  24  t=   19.9693    F    F
+ getting partials for rec          24 ray           1
+  traced ray   2 to source   1  from receiver  24  t=   15.8550    F    F
+ getting partials for rec          24 ray           2
+  traced ray   1 to source   1  from receiver  25  t=   24.0558    F    F
+ getting partials for rec          25 ray           1
+  traced ray   2 to source   1  from receiver  25  t=   21.2454    F    F
+ getting partials for rec          25 ray           2
+  traced ray   1 to source   1  from receiver  26  t=   28.7204    F    F
+ getting partials for rec          26 ray           1
+  traced ray   2 to source   1  from receiver  26  t=   26.7887    F    F
+ getting partials for rec          26 ray           2
+  traced ray   1 to source   1  from receiver  27  t=   33.1769    F    F
+ getting partials for rec          27 ray           1
+  traced ray   2 to source   1  from receiver  27  t=   32.3382    F    F
+ getting partials for rec          27 ray           2
+  traced ray   1 to source   1  from receiver  28  t=   37.9018    F    F
+ getting partials for rec          28 ray           1
+  traced ray   2 to source   1  from receiver  28  t=   37.5549    F    F
+ getting partials for rec          28 ray           2
+  traced ray   1 to source   1  from receiver  29  t=   43.2376    F    F
+ getting partials for rec          29 ray           1
+  traced ray   2 to source   1  from receiver  29  t=   42.9579    F    F
+ getting partials for rec          29 ray           2
+  traced ray   1 to source   1  from receiver  30  t=   48.6945    F    F
+ getting partials for rec          30 ray           1
+  traced ray   2 to source   1  from receiver  30  t=   48.5091    F    F
+ getting partials for rec          30 ray           2
+  traced ray   1 to source   1  from receiver  31  t=   19.2611    F    F
+ getting partials for rec          31 ray           1
+  traced ray   2 to source   1  from receiver  31  t=   12.7351    F    F
+ getting partials for rec          31 ray           2
+  traced ray   1 to source   1  from receiver  32  t=   19.3700    F    F
+ getting partials for rec          32 ray           1
+  traced ray   2 to source   1  from receiver  32  t=   12.6655    F    F
+ getting partials for rec          32 ray           2
+  traced ray   1 to source   1  from receiver  33  t=   20.4884    F    F
+ getting partials for rec          33 ray           1
+  traced ray   2 to source   1  from receiver  33  t=   14.9208    F    F
+ getting partials for rec          33 ray           2
+  traced ray   1 to source   1  from receiver  34  t=   22.6095    F    F
+ getting partials for rec          34 ray           1
+  traced ray   2 to source   1  from receiver  34  t=   18.6832    F    F
+ getting partials for rec          34 ray           2
+  traced ray   1 to source   1  from receiver  35  t=   25.9651    F    F
+ getting partials for rec          35 ray           1
+  traced ray   2 to source   1  from receiver  35  t=   23.3350    F    F
+ getting partials for rec          35 ray           2
+  traced ray   1 to source   1  from receiver  36  t=   30.1293    F    F
+ getting partials for rec          36 ray           1
+  traced ray   2 to source   1  from receiver  36  t=   28.3746    F    F
+ getting partials for rec          36 ray           2
+  traced ray   1 to source   1  from receiver  37  t=   34.7163    F    F
+ getting partials for rec          37 ray           1
+  traced ray   2 to source   1  from receiver  37  t=   33.7210    F    F
+ getting partials for rec          37 ray           2
+  traced ray   1 to source   1  from receiver  38  t=   39.4049    F    F
+ getting partials for rec          38 ray           1
+  traced ray   2 to source   1  from receiver  38  t=   38.9993    F    F
+ getting partials for rec          38 ray           2
+  traced ray   1 to source   1  from receiver  39  t=   44.2200    F    F
+ getting partials for rec          39 ray           1
+  traced ray   2 to source   1  from receiver  39  t=   44.0178    F    F
+ getting partials for rec          39 ray           2
+  traced ray   1 to source   1  from receiver  40  t=   49.3520    F    F
+ getting partials for rec          40 ray           1
+  traced ray   2 to source   1  from receiver  40  t=   49.2052    F    F
+ getting partials for rec          40 ray           2
+  traced ray   1 to source   1  from receiver  41  t=   22.2686    F    F
+ getting partials for rec          41 ray           1
+  traced ray   2 to source   1  from receiver  41  t=   17.9804    F    F
+ getting partials for rec          41 ray           2
+  traced ray   1 to source   1  from receiver  42  t=   22.6877    F    F
+ getting partials for rec          42 ray           1
+  traced ray   2 to source   1  from receiver  42  t=   17.9912    F    F
+ getting partials for rec          42 ray           2
+  traced ray   1 to source   1  from receiver  43  t=   24.3861    F    F
+ getting partials for rec          43 ray           1
+  traced ray   2 to source   1  from receiver  43  t=   19.6712    F    F
+ getting partials for rec          43 ray           2
+  traced ray   1 to source   1  from receiver  44  t=   26.1053    F    F
+ getting partials for rec          44 ray           1
+  traced ray   2 to source   1  from receiver  44  t=   22.6364    F    F
+ getting partials for rec          44 ray           2
+  traced ray   1 to source   1  from receiver  45  t=   28.3797    F    F
+ getting partials for rec          45 ray           1
+  traced ray   2 to source   1  from receiver  45  t=   26.3539    F    F
+ getting partials for rec          45 ray           2
+  traced ray   1 to source   1  from receiver  46  t=   31.9217    F    F
+ getting partials for rec          46 ray           1
+  traced ray   2 to source   1  from receiver  46  t=   30.6435    F    F
+ getting partials for rec          46 ray           2
+  traced ray   1 to source   1  from receiver  47  t=   36.5452    F    F
+ getting partials for rec          47 ray           1
+  traced ray   2 to source   1  from receiver  47  t=   35.6039    F    F
+ getting partials for rec          47 ray           2
+  traced ray   1 to source   1  from receiver  48  t=   41.3456    F    F
+ getting partials for rec          48 ray           1
+  traced ray   2 to source   1  from receiver  48  t=   40.8542    F    F
+ getting partials for rec          48 ray           2
+  traced ray   1 to source   1  from receiver  49  t=   45.6529    T    F
+ getting partials for rec          49 ray           1
+  traced ray   2 to source   1  from receiver  49  t=   45.5831    F    F
+ getting partials for rec          49 ray           2
+  traced ray   1 to source   1  from receiver  50  t=   50.4013    T    F
+ getting partials for rec          50 ray           1
+  traced ray   2 to source   1  from receiver  50  t=   50.3382    F    F
+ getting partials for rec          50 ray           2
+  traced ray   1 to source   1  from receiver  51  t=   26.1405    F    F
+ getting partials for rec          51 ray           1
+  traced ray   2 to source   1  from receiver  51  t=   23.3060    F    F
+ getting partials for rec          51 ray           2
+  traced ray   1 to source   1  from receiver  52  t=   26.3335    F    F
+ getting partials for rec          52 ray           1
+  traced ray   2 to source   1  from receiver  52  t=   23.3667    F    F
+ getting partials for rec          52 ray           2
+  traced ray   1 to source   1  from receiver  53  t=   27.6364    F    F
+ getting partials for rec          53 ray           1
+  traced ray   2 to source   1  from receiver  53  t=   24.6837    F    F
+ getting partials for rec          53 ray           2
+  traced ray   1 to source   1  from receiver  54  t=   29.5965    F    F
+ getting partials for rec          54 ray           1
+  traced ray   2 to source   1  from receiver  54  t=   27.1405    F    F
+ getting partials for rec          54 ray           2
+  traced ray   1 to source   1  from receiver  55  t=   31.7193    F    F
+ getting partials for rec          55 ray           1
+  traced ray   2 to source   1  from receiver  55  t=   30.1301    F    F
+ getting partials for rec          55 ray           2
+  traced ray   1 to source   1  from receiver  56  t=   34.6660    F    F
+ getting partials for rec          56 ray           1
+  traced ray   2 to source   1  from receiver  56  t=   33.6805    F    F
+ getting partials for rec          56 ray           2
+  traced ray   1 to source   1  from receiver  57  t=   38.7276    F    F
+ getting partials for rec          57 ray           1
+  traced ray   2 to source   1  from receiver  57  t=   38.0279    F    F
+ getting partials for rec          57 ray           2
+  traced ray   1 to source   1  from receiver  58  t=   43.4170    F    F
+ getting partials for rec          58 ray           1
+  traced ray   2 to source   1  from receiver  58  t=   42.9310    F    F
+ getting partials for rec          58 ray           2
+  traced ray   1 to source   1  from receiver  59  t=   47.9893    T    F
+ getting partials for rec          59 ray           1
+  traced ray   2 to source   1  from receiver  59  t=   47.8775    F    F
+ getting partials for rec          59 ray           2
+  traced ray   1 to source   1  from receiver  60  t=   52.4458    T    F
+ getting partials for rec          60 ray           1
+  traced ray   2 to source   1  from receiver  60  t=   52.4318    F    F
+ getting partials for rec          60 ray           2
+  traced ray   1 to source   1  from receiver  61  t=   30.6895    F    F
+ getting partials for rec          61 ray           1
+  traced ray   2 to source   1  from receiver  61  t=   28.6206    F    F
+ getting partials for rec          61 ray           2
+  traced ray   1 to source   1  from receiver  62  t=   30.4553    F    F
+ getting partials for rec          62 ray           1
+  traced ray   2 to source   1  from receiver  62  t=   28.6802    F    F
+ getting partials for rec          62 ray           2
+  traced ray   1 to source   1  from receiver  63  t=   31.1654    F    F
+ getting partials for rec          63 ray           1
+  traced ray   2 to source   1  from receiver  63  t=   29.7989    F    F
+ getting partials for rec          63 ray           2
+  traced ray   1 to source   1  from receiver  64  t=   33.2539    F    F
+ getting partials for rec          64 ray           1
+  traced ray   2 to source   1  from receiver  64  t=   31.9038    F    F
+ getting partials for rec          64 ray           2
+  traced ray   1 to source   1  from receiver  65  t=   35.9289    F    F
+ getting partials for rec          65 ray           1
+  traced ray   2 to source   1  from receiver  65  t=   34.5647    F    F
+ getting partials for rec          65 ray           2
+  traced ray   1 to source   1  from receiver  66  t=   38.3972    F    F
+ getting partials for rec          66 ray           1
+  traced ray   2 to source   1  from receiver  66  t=   37.5283    F    F
+ getting partials for rec          66 ray           2
+  traced ray   1 to source   1  from receiver  67  t=   41.5464    F    F
+ getting partials for rec          67 ray           1
+  traced ray   2 to source   1  from receiver  67  t=   41.0346    F    F
+ getting partials for rec          67 ray           2
+  traced ray   1 to source   1  from receiver  68  t=   45.6777    F    F
+ getting partials for rec          68 ray           1
+  traced ray   2 to source   1  from receiver  68  t=   45.2920    F    F
+ getting partials for rec          68 ray           2
+  traced ray   1 to source   1  from receiver  69  t=   50.5664    F    F
+ getting partials for rec          69 ray           1
+  traced ray   2 to source   1  from receiver  69  t=   50.2763    F    F
+ getting partials for rec          69 ray           2
+  traced ray   1 to source   1  from receiver  70  t=   55.1301    T    F
+ getting partials for rec          70 ray           1
+  traced ray   2 to source   1  from receiver  70  t=   55.0948    F    F
+ getting partials for rec          70 ray           2
+  traced ray   1 to source   1  from receiver  71  t=   35.3847    F    F
+ getting partials for rec          71 ray           1
+  traced ray   2 to source   1  from receiver  71  t=   33.9697    F    F
+ getting partials for rec          71 ray           2
+  traced ray   1 to source   1  from receiver  72  t=   35.0213    F    F
+ getting partials for rec          72 ray           1
+  traced ray   2 to source   1  from receiver  72  t=   33.9078    F    F
+ getting partials for rec          72 ray           2
+  traced ray   1 to source   1  from receiver  73  t=   35.4499    F    F
+ getting partials for rec          73 ray           1
+  traced ray   2 to source   1  from receiver  73  t=   34.8219    F    F
+ getting partials for rec          73 ray           2
+  traced ray   1 to source   1  from receiver  74  t=   37.2821    F    F
+ getting partials for rec          74 ray           1
+  traced ray   2 to source   1  from receiver  74  t=   36.7622    F    F
+ getting partials for rec          74 ray           2
+  traced ray   1 to source   1  from receiver  75  t=   40.0501    F    F
+ getting partials for rec          75 ray           1
+  traced ray   2 to source   1  from receiver  75  t=   39.2954    F    F
+ getting partials for rec          75 ray           2
+  traced ray   1 to source   1  from receiver  76  t=   42.6648    F    F
+ getting partials for rec          76 ray           1
+  traced ray   2 to source   1  from receiver  76  t=   41.9463    F    F
+ getting partials for rec          76 ray           2
+  traced ray   1 to source   1  from receiver  77  t=   45.2021    F    F
+ getting partials for rec          77 ray           1
+  traced ray   2 to source   1  from receiver  77  t=   44.7374    F    F
+ getting partials for rec          77 ray           2
+  traced ray   1 to source   1  from receiver  78  t=   48.6813    F    F
+ getting partials for rec          78 ray           1
+  traced ray   2 to source   1  from receiver  78  t=   48.3373    F    F
+ getting partials for rec          78 ray           2
+  traced ray   1 to source   1  from receiver  79  t=   53.0523    F    F
+ getting partials for rec          79 ray           1
+  traced ray   2 to source   1  from receiver  79  t=   52.7366    F    F
+ getting partials for rec          79 ray           2
+  traced ray   1 to source   1  from receiver  80  t=   57.8236    F    F
+ getting partials for rec          80 ray           1
+  traced ray   2 to source   1  from receiver  80  t=   57.6329    F    F
+ getting partials for rec          80 ray           2
+  traced ray   1 to source   1  from receiver  81  t=   39.8563    F    F
+ getting partials for rec          81 ray           1
+  traced ray   2 to source   1  from receiver  81  t=   39.1257    F    F
+ getting partials for rec          81 ray           2
+  traced ray   1 to source   1  from receiver  82  t=   39.8461    F    F
+ getting partials for rec          82 ray           1
+  traced ray   2 to source   1  from receiver  82  t=   39.1339    F    F
+ getting partials for rec          82 ray           2
+  traced ray   1 to source   1  from receiver  83  t=   40.3316    F    F
+ getting partials for rec          83 ray           1
+  traced ray   2 to source   1  from receiver  83  t=   39.7817    F    F
+ getting partials for rec          83 ray           2
+  traced ray   1 to source   1  from receiver  84  t=   41.7045    F    F
+ getting partials for rec          84 ray           1
+  traced ray   2 to source   1  from receiver  84  t=   41.4660    F    F
+ getting partials for rec          84 ray           2
+  traced ray   1 to source   1  from receiver  85  t=   43.8343    T    F
+ getting partials for rec          85 ray           1
+  traced ray   2 to source   1  from receiver  85  t=   43.7269    F    F
+ getting partials for rec          85 ray           2
+  traced ray   1 to source   1  from receiver  86  t=   46.7571    F    F
+ getting partials for rec          86 ray           1
+  traced ray   2 to source   1  from receiver  86  t=   46.5067    F    F
+ getting partials for rec          86 ray           2
+  traced ray   1 to source   1  from receiver  87  t=   49.5726    F    F
+ getting partials for rec          87 ray           1
+  traced ray   2 to source   1  from receiver  87  t=   49.1705    F    F
+ getting partials for rec          87 ray           2
+  traced ray   1 to source   1  from receiver  88  t=   52.4342    F    F
+ getting partials for rec          88 ray           1
+  traced ray   2 to source   1  from receiver  88  t=   52.0850    F    F
+ getting partials for rec          88 ray           2
+  traced ray   1 to source   1  from receiver  89  t=   55.8504    F    F
+ getting partials for rec          89 ray           1
+  traced ray   2 to source   1  from receiver  89  t=   55.5699    F    F
+ getting partials for rec          89 ray           2
+  traced ray   1 to source   1  from receiver  90  t=   60.2412    F    F
+ getting partials for rec          90 ray           1
+  traced ray   2 to source   1  from receiver  90  t=   59.9606    F    F
+ getting partials for rec          90 ray           2
+  traced ray   1 to source   1  from receiver  91  t=   44.5713    F    F
+ getting partials for rec          91 ray           1
+  traced ray   2 to source   1  from receiver  91  t=   44.1253    F    F
+ getting partials for rec          91 ray           2
+  traced ray   1 to source   1  from receiver  92  t=   44.7164    F    F
+ getting partials for rec          92 ray           1
+  traced ray   2 to source   1  from receiver  92  t=   44.2978    F    F
+ getting partials for rec          92 ray           2
+  traced ray   1 to source   1  from receiver  93  t=   45.4743    F    F
+ getting partials for rec          93 ray           1
+  traced ray   2 to source   1  from receiver  93  t=   45.0867    F    F
+ getting partials for rec          93 ray           2
+  traced ray   1 to source   1  from receiver  94  t=   46.4707    F    F
+ getting partials for rec          94 ray           1
+  traced ray   2 to source   1  from receiver  94  t=   46.2989    F    F
+ getting partials for rec          94 ray           2
+  traced ray   1 to source   1  from receiver  95  t=   48.0247    T    F
+ getting partials for rec          95 ray           1
+  traced ray   2 to source   1  from receiver  95  t=   47.9873    F    F
+ getting partials for rec          95 ray           2
+  traced ray   1 to source   1  from receiver  96  t=   50.6266    T    F
+ getting partials for rec          96 ray           1
+  traced ray   2 to source   1  from receiver  96  t=   50.6011    F    F
+ getting partials for rec          96 ray           2
+  traced ray   1 to source   1  from receiver  97  t=   53.8798    T    F
+ getting partials for rec          97 ray           1
+  traced ray   2 to source   1  from receiver  97  t=   53.7396    F    F
+ getting partials for rec          97 ray           2
+  traced ray   1 to source   1  from receiver  98  t=   56.7340    F    F
+ getting partials for rec          98 ray           1
+  traced ray   2 to source   1  from receiver  98  t=   56.4289    F    F
+ getting partials for rec          98 ray           2
+  traced ray   1 to source   1  from receiver  99  t=   59.4591    F    F
+ getting partials for rec          99 ray           1
+  traced ray   2 to source   1  from receiver  99  t=   59.1837    F    F
+ getting partials for rec          99 ray           2
+  traced ray   1 to source   1  from receiver 100  t=   63.1229    F    F
+ getting partials for rec         100 ray           1
+  traced ray   2 to source   1  from receiver 100  t=   62.8615    F    F
+ getting partials for rec         100 ray           2
+ finished  fast marching and ray tracing for source           1
+ ******************************************************************************
+
+ starting to initialize local source           2
+ intersection            1 :        2601  nodes found
+ intersection            2 :           0  nodes found
+ intersection            3 :           0  nodes found
+ intersections found
+ nodes of refined source grid tagged
+ refined source region           1  defined, nnode =       67626
+ sregion           2 does not exist in refined source grid
+ refined velocities transferred
+ --------------------------------------------------
+ starting source initialization for vtype =           1
+ source does not lie on grid
+ source lies in a cut cell
+ refined source initialized in sregion           1
+ propagation through region           1  finished
+ refined source region           1  swept
+ refined grid for source           2 took   4.41000015E-02  sec
+
+ shortest time on refined grid boundary is   4.4837254970946159     
+ before transefr refined region
+ transferred times from fine grid to coarse for region           1
+ narrow band created in region           1 alive/nb         104         107
+ propagation through region           1  finished
+ results written to timefield           1
+ timefields in main grid regions connected to the source established, vtype=           1
+     timefields on upward init path for vtype  1:    1
+   timefields on downward init path for vtype  1:    1
+ # time fields from initialization           1
+
+
+ path   1    leg  1  using source time field   1
+ path   1  leg   2  from interface   2   to   1  through region   1
+ previous step is a source time field
+ propagation through region           1  finished
+         104  starting intersection nodes received a turning ray
+ created new time field           2
+
+
+ path   2    leg  1  using source time field   1
+ path    1  timefields    1    2
+ path    2  timefields    1
+ starting the ray tracing for source           2
+  traced ray   3 to source   2  from receiver   1  t=   28.4566    F    F
+ getting partials for rec           1 ray           3
+  traced ray   4 to source   2  from receiver   1  t=   26.3069    F    F
+ getting partials for rec           1 ray           4
+  traced ray   3 to source   2  from receiver   2  t=   23.7498    F    F
+ getting partials for rec           2 ray           3
+  traced ray   4 to source   2  from receiver   2  t=   20.6873    F    F
+ getting partials for rec           2 ray           4
+  traced ray   3 to source   2  from receiver   3  t=   19.0236    F    F
+ getting partials for rec           3 ray           3
+  traced ray   4 to source   2  from receiver   3  t=   15.0712    F    F
+ getting partials for rec           3 ray           4
+  traced ray   3 to source   2  from receiver   4  t=   15.2231    F    F
+ getting partials for rec           4 ray           3
+  traced ray   4 to source   2  from receiver   4  t=    9.6300    F    F
+ getting partials for rec           4 ray           4
+  traced ray   3 to source   2  from receiver   5  t=   13.3187    F    F
+ getting partials for rec           5 ray           3
+  traced ray   4 to source   2  from receiver   5  t=    4.9768    F    F
+ getting partials for rec           5 ray           4
+  traced ray   3 to source   2  from receiver   6  t=   14.1048    F    F
+ getting partials for rec           6 ray           3
+  traced ray   4 to source   2  from receiver   6  t=    5.0288    F    F
+ getting partials for rec           6 ray           4
+  traced ray   3 to source   2  from receiver   7  t=   16.8528    F    F
+ getting partials for rec           7 ray           3
+  traced ray   4 to source   2  from receiver   7  t=    9.6926    F    F
+ getting partials for rec           7 ray           4
+  traced ray   3 to source   2  from receiver   8  t=   20.2356    F    F
+ getting partials for rec           8 ray           3
+  traced ray   4 to source   2  from receiver   8  t=   15.0874    F    F
+ getting partials for rec           8 ray           4
+  traced ray   3 to source   2  from receiver   9  t=   24.3474    F    F
+ getting partials for rec           9 ray           3
+  traced ray   4 to source   2  from receiver   9  t=   20.6541    F    F
+ getting partials for rec           9 ray           4
+  traced ray   3 to source   2  from receiver  10  t=   28.8568    F    F
+ getting partials for rec          10 ray           3
+  traced ray   4 to source   2  from receiver  10  t=   26.2496    F    F
+ getting partials for rec          10 ray           4
+  traced ray   3 to source   2  from receiver  11  t=   27.9046    F    F
+ getting partials for rec          11 ray           3
+  traced ray   4 to source   2  from receiver  11  t=   26.0572    F    F
+ getting partials for rec          11 ray           4
+  traced ray   3 to source   2  from receiver  12  t=   23.1714    F    F
+ getting partials for rec          12 ray           3
+  traced ray   4 to source   2  from receiver  12  t=   20.3312    F    F
+ getting partials for rec          12 ray           4
+  traced ray   3 to source   2  from receiver  13  t=   18.9559    F    F
+ getting partials for rec          13 ray           3
+  traced ray   4 to source   2  from receiver  13  t=   14.6066    F    F
+ getting partials for rec          13 ray           4
+  traced ray   3 to source   2  from receiver  14  t=   15.4643    F    F
+ getting partials for rec          14 ray           3
+  traced ray   4 to source   2  from receiver  14  t=    8.9082    F    F
+ getting partials for rec          14 ray           4
+  traced ray   3 to source   2  from receiver  15  t=   13.5885    F    F
+ getting partials for rec          15 ray           3
+  traced ray   4 to source   2  from receiver  15  t=    3.1401    F    F
+ getting partials for rec          15 ray           4
+  traced ray   3 to source   2  from receiver  16  t=   14.0389    F    F
+ getting partials for rec          16 ray           3
+  traced ray   4 to source   2  from receiver  16  t=    3.2076    F    F
+ getting partials for rec          16 ray           4
+  traced ray   3 to source   2  from receiver  17  t=   16.5280    F    F
+ getting partials for rec          17 ray           3
+  traced ray   4 to source   2  from receiver  17  t=    8.9577    F    F
+ getting partials for rec          17 ray           4
+  traced ray   3 to source   2  from receiver  18  t=   20.1396    F    F
+ getting partials for rec          18 ray           3
+  traced ray   4 to source   2  from receiver  18  t=   14.6701    F    F
+ getting partials for rec          18 ray           4
+  traced ray   3 to source   2  from receiver  19  t=   24.5095    F    F
+ getting partials for rec          19 ray           3
+  traced ray   4 to source   2  from receiver  19  t=   20.3754    F    F
+ getting partials for rec          19 ray           4
+  traced ray   3 to source   2  from receiver  20  t=   28.8269    F    F
+ getting partials for rec          20 ray           3
+  traced ray   4 to source   2  from receiver  20  t=   26.0198    F    F
+ getting partials for rec          20 ray           4
+  traced ray   3 to source   2  from receiver  21  t=   28.5219    F    F
+ getting partials for rec          21 ray           3
+  traced ray   4 to source   2  from receiver  21  t=   26.8040    F    F
+ getting partials for rec          21 ray           4
+  traced ray   3 to source   2  from receiver  22  t=   24.0290    F    F
+ getting partials for rec          22 ray           3
+  traced ray   4 to source   2  from receiver  22  t=   21.4529    F    F
+ getting partials for rec          22 ray           4
+  traced ray   3 to source   2  from receiver  23  t=   20.4414    F    F
+ getting partials for rec          23 ray           3
+  traced ray   4 to source   2  from receiver  23  t=   16.0749    F    F
+ getting partials for rec          23 ray           4
+  traced ray   3 to source   2  from receiver  24  t=   17.5563    F    F
+ getting partials for rec          24 ray           3
+  traced ray   4 to source   2  from receiver  24  t=   11.0441    F    F
+ getting partials for rec          24 ray           4
+  traced ray   3 to source   2  from receiver  25  t=   15.7075    F    F
+ getting partials for rec          25 ray           3
+  traced ray   4 to source   2  from receiver  25  t=    7.4867    F    F
+ getting partials for rec          25 ray           4
+  traced ray   3 to source   2  from receiver  26  t=   15.6255    F    F
+ getting partials for rec          26 ray           3
+  traced ray   4 to source   2  from receiver  26  t=    7.5175    F    F
+ getting partials for rec          26 ray           4
+  traced ray   3 to source   2  from receiver  27  t=   17.5329    F    F
+ getting partials for rec          27 ray           3
+  traced ray   4 to source   2  from receiver  27  t=   11.0793    F    F
+ getting partials for rec          27 ray           4
+  traced ray   3 to source   2  from receiver  28  t=   21.0683    F    F
+ getting partials for rec          28 ray           3
+  traced ray   4 to source   2  from receiver  28  t=   16.0377    F    F
+ getting partials for rec          28 ray           4
+  traced ray   3 to source   2  from receiver  29  t=   25.3867    F    F
+ getting partials for rec          29 ray           3
+  traced ray   4 to source   2  from receiver  29  t=   21.4502    F    F
+ getting partials for rec          29 ray           4
+  traced ray   3 to source   2  from receiver  30  t=   29.4133    F    F
+ getting partials for rec          30 ray           3
+  traced ray   4 to source   2  from receiver  30  t=   26.9914    F    F
+ getting partials for rec          30 ray           4
+  traced ray   3 to source   2  from receiver  31  t=   30.4769    F    F
+ getting partials for rec          31 ray           3
+  traced ray   4 to source   2  from receiver  31  t=   28.6877    F    F
+ getting partials for rec          31 ray           4
+  traced ray   3 to source   2  from receiver  32  t=   26.5183    F    F
+ getting partials for rec          32 ray           3
+  traced ray   4 to source   2  from receiver  32  t=   23.6671    F    F
+ getting partials for rec          32 ray           4
+  traced ray   3 to source   2  from receiver  33  t=   23.1753    F    F
+ getting partials for rec          33 ray           3
+  traced ray   4 to source   2  from receiver  33  t=   18.8472    F    F
+ getting partials for rec          33 ray           4
+  traced ray   3 to source   2  from receiver  34  t=   20.2618    F    F
+ getting partials for rec          34 ray           3
+  traced ray   4 to source   2  from receiver  34  t=   15.0462    F    F
+ getting partials for rec          34 ray           4
+  traced ray   3 to source   2  from receiver  35  t=   18.3171    F    F
+ getting partials for rec          35 ray           3
+  traced ray   4 to source   2  from receiver  35  t=   12.7271    F    F
+ getting partials for rec          35 ray           4
+  traced ray   3 to source   2  from receiver  36  t=   18.0707    F    F
+ getting partials for rec          36 ray           3
+  traced ray   4 to source   2  from receiver  36  t=   12.7372    F    F
+ getting partials for rec          36 ray           4
+  traced ray   3 to source   2  from receiver  37  t=   19.7570    F    F
+ getting partials for rec          37 ray           3
+  traced ray   4 to source   2  from receiver  37  t=   15.0136    F    F
+ getting partials for rec          37 ray           4
+  traced ray   3 to source   2  from receiver  38  t=   22.7517    F    F
+ getting partials for rec          38 ray           3
+  traced ray   4 to source   2  from receiver  38  t=   18.8100    F    F
+ getting partials for rec          38 ray           4
+  traced ray   3 to source   2  from receiver  39  t=   26.4830    F    F
+ getting partials for rec          39 ray           3
+  traced ray   4 to source   2  from receiver  39  t=   23.5137    F    F
+ getting partials for rec          39 ray           4
+  traced ray   3 to source   2  from receiver  40  t=   30.6352    F    F
+ getting partials for rec          40 ray           3
+  traced ray   4 to source   2  from receiver  40  t=   28.6238    F    F
+ getting partials for rec          40 ray           4
+  traced ray   3 to source   2  from receiver  41  t=   33.5328    F    F
+ getting partials for rec          41 ray           3
+  traced ray   4 to source   2  from receiver  41  t=   31.4244    F    F
+ getting partials for rec          41 ray           4
+  traced ray   3 to source   2  from receiver  42  t=   29.9368    F    F
+ getting partials for rec          42 ray           3
+  traced ray   4 to source   2  from receiver  42  t=   26.8265    F    F
+ getting partials for rec          42 ray           4
+  traced ray   3 to source   2  from receiver  43  t=   26.0141    F    F
+ getting partials for rec          43 ray           3
+  traced ray   4 to source   2  from receiver  43  t=   22.8095    F    F
+ getting partials for rec          43 ray           4
+  traced ray   3 to source   2  from receiver  44  t=   22.7324    F    F
+ getting partials for rec          44 ray           3
+  traced ray   4 to source   2  from receiver  44  t=   19.7414    F    F
+ getting partials for rec          44 ray           4
+  traced ray   3 to source   2  from receiver  45  t=   21.2723    F    F
+ getting partials for rec          45 ray           3
+  traced ray   4 to source   2  from receiver  45  t=   18.0689    F    F
+ getting partials for rec          45 ray           4
+  traced ray   3 to source   2  from receiver  46  t=   21.3637    F    F
+ getting partials for rec          46 ray           3
+  traced ray   4 to source   2  from receiver  46  t=   18.0466    F    F
+ getting partials for rec          46 ray           4
+  traced ray   3 to source   2  from receiver  47  t=   23.0497    F    F
+ getting partials for rec          47 ray           3
+  traced ray   4 to source   2  from receiver  47  t=   19.7202    F    F
+ getting partials for rec          47 ray           4
+  traced ray   3 to source   2  from receiver  48  t=   25.3870    F    F
+ getting partials for rec          48 ray           3
+  traced ray   4 to source   2  from receiver  48  t=   22.6316    F    F
+ getting partials for rec          48 ray           4
+  traced ray   3 to source   2  from receiver  49  t=   28.5303    F    F
+ getting partials for rec          49 ray           3
+  traced ray   4 to source   2  from receiver  49  t=   26.3602    F    F
+ getting partials for rec          49 ray           4
+  traced ray   3 to source   2  from receiver  50  t=   32.5900    F    F
+ getting partials for rec          50 ray           3
+  traced ray   4 to source   2  from receiver  50  t=   30.8412    F    F
+ getting partials for rec          50 ray           4
+  traced ray   3 to source   2  from receiver  51  t=   36.6147    F    F
+ getting partials for rec          51 ray           3
+  traced ray   4 to source   2  from receiver  51  t=   34.7735    F    F
+ getting partials for rec          51 ray           4
+  traced ray   3 to source   2  from receiver  52  t=   32.8165    F    F
+ getting partials for rec          52 ray           3
+  traced ray   4 to source   2  from receiver  52  t=   30.6723    F    F
+ getting partials for rec          52 ray           4
+  traced ray   3 to source   2  from receiver  53  t=   29.1155    F    F
+ getting partials for rec          53 ray           3
+  traced ray   4 to source   2  from receiver  53  t=   27.1504    F    F
+ getting partials for rec          53 ray           4
+  traced ray   3 to source   2  from receiver  54  t=   26.3783    F    F
+ getting partials for rec          54 ray           3
+  traced ray   4 to source   2  from receiver  54  t=   24.5907    F    F
+ getting partials for rec          54 ray           4
+  traced ray   3 to source   2  from receiver  55  t=   25.2584    F    F
+ getting partials for rec          55 ray           3
+  traced ray   4 to source   2  from receiver  55  t=   23.3987    F    F
+ getting partials for rec          55 ray           4
+  traced ray   3 to source   2  from receiver  56  t=   25.5222    F    F
+ getting partials for rec          56 ray           3
+  traced ray   4 to source   2  from receiver  56  t=   23.3938    F    F
+ getting partials for rec          56 ray           4
+  traced ray   3 to source   2  from receiver  57  t=   26.9713    F    F
+ getting partials for rec          57 ray           3
+  traced ray   4 to source   2  from receiver  57  t=   24.7635    F    F
+ getting partials for rec          57 ray           4
+  traced ray   3 to source   2  from receiver  58  t=   28.9384    F    F
+ getting partials for rec          58 ray           3
+  traced ray   4 to source   2  from receiver  58  t=   27.0619    F    F
+ getting partials for rec          58 ray           4
+  traced ray   3 to source   2  from receiver  59  t=   31.6947    F    F
+ getting partials for rec          59 ray           3
+  traced ray   4 to source   2  from receiver  59  t=   29.9907    F    F
+ getting partials for rec          59 ray           4
+  traced ray   3 to source   2  from receiver  60  t=   35.2751    F    F
+ getting partials for rec          60 ray           3
+  traced ray   4 to source   2  from receiver  60  t=   33.7595    F    F
+ getting partials for rec          60 ray           4
+  traced ray   3 to source   2  from receiver  61  t=   39.4575    F    F
+ getting partials for rec          61 ray           3
+  traced ray   4 to source   2  from receiver  61  t=   38.5105    F    F
+ getting partials for rec          61 ray           4
+  traced ray   3 to source   2  from receiver  62  t=   35.7688    F    F
+ getting partials for rec          62 ray           3
+  traced ray   4 to source   2  from receiver  62  t=   34.6410    F    F
+ getting partials for rec          62 ray           4
+  traced ray   3 to source   2  from receiver  63  t=   33.0186    F    F
+ getting partials for rec          63 ray           3
+  traced ray   4 to source   2  from receiver  63  t=   31.6341    F    F
+ getting partials for rec          63 ray           4
+  traced ray   3 to source   2  from receiver  64  t=   30.9658    F    F
+ getting partials for rec          64 ray           3
+  traced ray   4 to source   2  from receiver  64  t=   29.5376    F    F
+ getting partials for rec          64 ray           4
+  traced ray   3 to source   2  from receiver  65  t=   30.0117    F    F
+ getting partials for rec          65 ray           3
+  traced ray   4 to source   2  from receiver  65  t=   28.6849    F    F
+ getting partials for rec          65 ray           4
+  traced ray   3 to source   2  from receiver  66  t=   30.0069    F    F
+ getting partials for rec          66 ray           3
+  traced ray   4 to source   2  from receiver  66  t=   28.7331    F    F
+ getting partials for rec          66 ray           4
+  traced ray   3 to source   2  from receiver  67  t=   31.0208    F    F
+ getting partials for rec          67 ray           3
+  traced ray   4 to source   2  from receiver  67  t=   29.9037    F    F
+ getting partials for rec          67 ray           4
+  traced ray   3 to source   2  from receiver  68  t=   33.1010    F    F
+ getting partials for rec          68 ray           3
+  traced ray   4 to source   2  from receiver  68  t=   31.8960    F    F
+ getting partials for rec          68 ray           4
+  traced ray   3 to source   2  from receiver  69  t=   35.7327    F    F
+ getting partials for rec          69 ray           3
+  traced ray   4 to source   2  from receiver  69  t=   34.3589    F    F
+ getting partials for rec          69 ray           4
+  traced ray   3 to source   2  from receiver  70  t=   38.5967    F    F
+ getting partials for rec          70 ray           3
+  traced ray   4 to source   2  from receiver  70  t=   37.3700    F    F
+ getting partials for rec          70 ray           4
+  traced ray   3 to source   2  from receiver  71  t=   42.6723    F    F
+ getting partials for rec          71 ray           3
+  traced ray   4 to source   2  from receiver  71  t=   42.0954    F    F
+ getting partials for rec          71 ray           4
+  traced ray   3 to source   2  from receiver  72  t=   39.4504    F    F
+ getting partials for rec          72 ray           3
+  traced ray   4 to source   2  from receiver  72  t=   38.6457    F    F
+ getting partials for rec          72 ray           4
+  traced ray   3 to source   2  from receiver  73  t=   37.3695    F    F
+ getting partials for rec          73 ray           3
+  traced ray   4 to source   2  from receiver  73  t=   36.3013    F    F
+ getting partials for rec          73 ray           4
+  traced ray   3 to source   2  from receiver  74  t=   35.9714    F    F
+ getting partials for rec          74 ray           3
+  traced ray   4 to source   2  from receiver  74  t=   34.8002    F    F
+ getting partials for rec          74 ray           4
+  traced ray   3 to source   2  from receiver  75  t=   35.0067    F    F
+ getting partials for rec          75 ray           3
+  traced ray   4 to source   2  from receiver  75  t=   33.9808    F    F
+ getting partials for rec          75 ray           4
+  traced ray   3 to source   2  from receiver  76  t=   34.6577    F    F
+ getting partials for rec          76 ray           3
+  traced ray   4 to source   2  from receiver  76  t=   33.9646    F    F
+ getting partials for rec          76 ray           4
+  traced ray   3 to source   2  from receiver  77  t=   35.3961    F    F
+ getting partials for rec          77 ray           3
+  traced ray   4 to source   2  from receiver  77  t=   34.9188    F    F
+ getting partials for rec          77 ray           4
+  traced ray   3 to source   2  from receiver  78  t=   37.4605    F    F
+ getting partials for rec          78 ray           3
+  traced ray   4 to source   2  from receiver  78  t=   36.8376    F    F
+ getting partials for rec          78 ray           4
+  traced ray   3 to source   2  from receiver  79  t=   39.9835    F    F
+ getting partials for rec          79 ray           3
+  traced ray   4 to source   2  from receiver  79  t=   39.1515    F    F
+ getting partials for rec          79 ray           4
+  traced ray   3 to source   2  from receiver  80  t=   42.4970    F    F
+ getting partials for rec          80 ray           3
+  traced ray   4 to source   2  from receiver  80  t=   41.6296    F    F
+ getting partials for rec          80 ray           4
+  traced ray   3 to source   2  from receiver  81  t=   46.3649    F    F
+ getting partials for rec          81 ray           3
+  traced ray   4 to source   2  from receiver  81  t=   45.8681    F    F
+ getting partials for rec          81 ray           4
+  traced ray   3 to source   2  from receiver  82  t=   43.9224    F    F
+ getting partials for rec          82 ray           3
+  traced ray   4 to source   2  from receiver  82  t=   43.1927    F    F
+ getting partials for rec          82 ray           4
+  traced ray   3 to source   2  from receiver  83  t=   42.0569    F    F
+ getting partials for rec          83 ray           3
+  traced ray   4 to source   2  from receiver  83  t=   41.2165    F    F
+ getting partials for rec          83 ray           4
+  traced ray   3 to source   2  from receiver  84  t=   40.5136    F    F
+ getting partials for rec          84 ray           3
+  traced ray   4 to source   2  from receiver  84  t=   39.9590    F    F
+ getting partials for rec          84 ray           4
+  traced ray   3 to source   2  from receiver  85  t=   39.7398    F    F
+ getting partials for rec          85 ray           3
+  traced ray   4 to source   2  from receiver  85  t=   39.1994    F    F
+ getting partials for rec          85 ray           4
+  traced ray   3 to source   2  from receiver  86  t=   39.6256    F    F
+ getting partials for rec          86 ray           3
+  traced ray   4 to source   2  from receiver  86  t=   39.1216    F    F
+ getting partials for rec          86 ray           4
+  traced ray   3 to source   2  from receiver  87  t=   40.2391    F    F
+ getting partials for rec          87 ray           3
+  traced ray   4 to source   2  from receiver  87  t=   39.8533    F    F
+ getting partials for rec          87 ray           4
+  traced ray   3 to source   2  from receiver  88  t=   41.8199    F    F
+ getting partials for rec          88 ray           3
+  traced ray   4 to source   2  from receiver  88  t=   41.5386    F    F
+ getting partials for rec          88 ray           4
+  traced ray   3 to source   2  from receiver  89  t=   43.8904    F    F
+ getting partials for rec          89 ray           3
+  traced ray   4 to source   2  from receiver  89  t=   43.6971    F    F
+ getting partials for rec          89 ray           4
+  traced ray   3 to source   2  from receiver  90  t=   46.6891    F    F
+ getting partials for rec          90 ray           3
+  traced ray   4 to source   2  from receiver  90  t=   46.2598    F    F
+ getting partials for rec          90 ray           4
+  traced ray   3 to source   2  from receiver  91  t=   50.6545    F    F
+ getting partials for rec          91 ray           3
+  traced ray   4 to source   2  from receiver  91  t=   50.2609    F    F
+ getting partials for rec          91 ray           4
+  traced ray   3 to source   2  from receiver  92  t=   48.6785    F    F
+ getting partials for rec          92 ray           3
+  traced ray   4 to source   2  from receiver  92  t=   48.1015    F    F
+ getting partials for rec          92 ray           4
+  traced ray   3 to source   2  from receiver  93  t=   46.6995    F    F
+ getting partials for rec          93 ray           3
+  traced ray   4 to source   2  from receiver  93  t=   46.2359    F    F
+ getting partials for rec          93 ray           4
+  traced ray   3 to source   2  from receiver  94  t=   44.9523    F    F
+ getting partials for rec          94 ray           3
+  traced ray   4 to source   2  from receiver  94  t=   44.7851    F    F
+ getting partials for rec          94 ray           4
+  traced ray   3 to source   2  from receiver  95  t=   44.3801    F    F
+ getting partials for rec          95 ray           3
+  traced ray   4 to source   2  from receiver  95  t=   44.1852    F    F
+ getting partials for rec          95 ray           4
+  traced ray   3 to source   2  from receiver  96  t=   44.7386    F    F
+ getting partials for rec          96 ray           3
+  traced ray   4 to source   2  from receiver  96  t=   44.3496    F    F
+ getting partials for rec          96 ray           4
+  traced ray   3 to source   2  from receiver  97  t=   45.3541    F    F
+ getting partials for rec          97 ray           3
+  traced ray   4 to source   2  from receiver  97  t=   45.0494    F    F
+ getting partials for rec          97 ray           4
+  traced ray   3 to source   2  from receiver  98  t=   46.4204    F    F
+ getting partials for rec          98 ray           3
+  traced ray   4 to source   2  from receiver  98  t=   46.2315    F    F
+ getting partials for rec          98 ray           4
+  traced ray   3 to source   2  from receiver  99  t=   47.9975    F    F
+ getting partials for rec          99 ray           3
+  traced ray   4 to source   2  from receiver  99  t=   47.8934    F    F
+ getting partials for rec          99 ray           4
+  traced ray   3 to source   2  from receiver 100  t=   50.6973    F    F
+ getting partials for rec         100 ray           3
+  traced ray   4 to source   2  from receiver 100  t=   50.6006    F    F
+ getting partials for rec         100 ray           4
+ finished  fast marching and ray tracing for source           2
+ ******************************************************************************
+
+ starting to initialize local source           3
+ intersection            1 :        2601  nodes found
+ intersection            2 :           0  nodes found
+ intersection            3 :           0  nodes found
+ intersections found
+ nodes of refined source grid tagged
+ refined source region           1  defined, nnode =       67626
+ sregion           2 does not exist in refined source grid
+ refined velocities transferred
+ --------------------------------------------------
+ starting source initialization for vtype =           1
+ source does not lie on grid
+ source lies in a cut cell

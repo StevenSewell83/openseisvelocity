@@ -1,0 +1,9 @@
+src.dat                c: File containing source-receiver associations
+arrtimes.dat           c: File containing all model traveltime fields
+5                      c: Ignore relocate if less than this number of stations
+5.0                    c: Maximum origin time perturbation
+interfacesref.in       c: Define limits of relocation
+otimes.dat             c: Observed traveltime file
+receivers.in           c: Receiver file (in reality the sources)
+1                      c: Apply refined sub-cell search (0=no, 1=yes)
+10                     c: Sub-cell dicing for refined search (~5-10 should do; must be >1)

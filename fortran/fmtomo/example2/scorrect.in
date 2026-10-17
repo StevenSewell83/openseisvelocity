@@ -1,0 +1,7 @@
+sources.in
+propgrid.in
+interfaces.in
+0.1      c: Depth correction (km)
+0.01     c: geographic corrrection (degrees)
+6371.0   c: Earth radius (km)
+

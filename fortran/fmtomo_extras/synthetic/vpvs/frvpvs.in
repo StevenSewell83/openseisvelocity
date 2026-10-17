@@ -1,0 +1,15 @@
+rays.dat               c: S-ray path file
+vgrids.in              c: Vp/Vs grid file
+vgridsref.in           c: Reference Vp/Vs grid file
+vgridspr.in            c: Vp reference grid file
+vgridssr.in            c: Vs reference grid file
+vgridss.in             c: Vs current grid file
+src.dat                c: Source-receiver associations
+otimess.dat            c: Observed times for S
+otimesp.dat            c: Observed times for P
+otimes.dat             c: Observed data
+mtimes.dat             c: Model data
+sourcesp.in            c: P receivers
+sourcess.in            c: S receivers
+frechet.dat            c: Output Frechet derivatives
+sandr.dat              c: Total number of sources and receivers

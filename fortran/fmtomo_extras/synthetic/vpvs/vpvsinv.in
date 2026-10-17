@@ -1,0 +1,15 @@
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+c INPUT PARAMETERS
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+vgridsref.in              c: File containing starting vpvs grid
+vgrids.in                 c: File containing current vpvs grid
+otimes.dat                c: File containing observed data
+mtimes.dat                c: File containing model data
+frechet.dat               c: File containing Frechet derivatives
+sandr.dat                 c: File containing numbers of sources & receivers
+1.0                       c: Damping factor (epsilon)
+20                        c: Subspace dimension
+1                         c: Apply 2nd derivative smoothing (0=no, 1=yes)
+0.50                      c: Smoothing factor (eta) -
+0.1                       c: Fraction of max. G size for sparse matrix
+6371.0                    c: Earth radius in km

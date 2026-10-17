@@ -1,0 +1,23 @@
+src.dat                         c: File containing source-receiver associations
+invert_p/arrtimes.dat           c: File containing all model traveltime fields for P
+invert_s/arrtimes.dat           c: File containing all model traveltime fields for S
+invert_p/sources.in             c: File containing all source locations for P
+invert_s/sources.in             c: File containing all source locations for S
+5                               c: Ignore relocate if less than this number of source-receiver combinations
+5.0                             c: Maximum origin time perturbation
+invert_p/interfacesref.in       c: Define limits of relocation (P = S)
+invert_p/otimes.dat             c: Observed traveltime file for P
+invert_s/otimes.dat             c: Observed traveltime file for S
+invert_p/receivers.in           c: Receiver file (in reality the sources) for P
+invert_s/receivers.in           c: Receiver file (in reality the sources) for S
+1                               c: Apply refined sub-cell search (0=no, 1=yes)
+10                              c: Sub-cell dicing for refined search (~5-10 should do; must be >1)
+0                               c: Determine 95% confidence interval (0=no,     1=yes)
+serror.dat                      c: Output of confidence interval
+3.0                             c: Weighting factor for S (higher means S-times less important)
+100.0                           c: Weighting factor for S-P residuals
+1                               c: Relocation based on:
+                                  1 = P-times only
+                                  2 = P-times and unique S-times
+                                  3 = P-times and S-P times and unique S-times
+                                  4 = P-times and S-times

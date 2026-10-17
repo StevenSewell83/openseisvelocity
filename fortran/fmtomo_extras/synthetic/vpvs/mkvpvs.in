@@ -1,0 +1,5 @@
+vgridsp.in                 c: Input Vp file
+vgridss.in                 c: Input Vs file
+vgridsref.in               c: Output Vp/Vs file
+vgridvpvs.in               c: Output calculated Vp/Vs
+50.0                       c: maximum depth of Vp/Vs

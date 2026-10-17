@@ -1,0 +1,108 @@
+#!/usr/bin/ksh
+#
+# NOTE: If ksh is not available, you may use zsh.
+#
+############################################
+# Script for running Vp/Vs
+# tomography program
+############################################
+#
+# Name of file containing current velocity grid
+cvg=vgrids.in
+# Name of file containing initial velocity grid
+ivg=vgridsref.in
+# program for creating initial Vp/Vs model
+mkps=mkvpvs
+# Name of program for computing Frechet derivatives
+# and model times
+frt=frvpvs
+# Name of program for performing inversion
+inv=vpvsinv
+# Name of file containing iteration number
+itn=inviter.in
+# Name of file with current observed times
+otc=otimes.dat
+# Name of file containing current model traveltimes
+mtrav=mtimes.dat
+# Name of program for calculating traveltime residuals
+resid=vpvsresids
+# Name of output file for calculating traveltime residuals
+resout=vpvsresids.out
+#
+###############################
+###############################
+cd=chdir
+ifile=tomo3dps.in
+typeset -i COUNT
+typeset -i BGITER
+typeset -i NI
+typeset -i ITER
+typeset -i BINV
+###############################
+###############################
+#
+# Open input file and read in variables
+#
+exec 3<$ifile
+  read -u3 NI
+  read -u3 BGITER
+  read -u3 BINV
+exec 3<&-
+#
+# Create reference Vp/Vs model
+#
+$mkps
+#
+# If necessary, copy the initial velocity
+# file to the current file
+#
+if [[ $BGITER -eq 0 ]]
+then
+   cp $ivg $cvg
+   $frech
+   ITER=1
+   exec 4>$itn
+      print -u4 $ITER
+   exec 4<&-
+fi
+#
+#
+# Compute frechet derivatives and model times
+#
+if [[ $BGITER -eq 0 || ($BGITER -eq 1 && $BINV -eq 1) ]] 
+then
+   $frt
+   #
+   # Calculate initial residual
+   #
+   exec 5>$resout
+   $resid | (read ttres; print -u5 $ttres)
+else
+   exec 5>>$resout
+fi
+#
+# Now begin a loop to iteratively apply subspace inversion
+# and FMM and source relocation
+#
+ITER=1
+while [[ $ITER -le $NI ]]
+do
+#
+# Inversion
+#
+   $inv
+#
+#  Compute frechet derivatives and model data
+#
+   $frt
+#
+#  Calculate data residual
+#
+   ITER=ITER+1
+   COUNT=ITER
+   $resid | (read ttres; print -u5 $ttres)
+   exec 4>$itn
+      print -u4 $COUNT
+   exec 4<&-
+done
+exec 5<&-

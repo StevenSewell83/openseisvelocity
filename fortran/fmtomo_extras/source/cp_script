@@ -1,0 +1,124 @@
+#!/usr/bin/ksh
+#
+# NOTE: If ksh is not available, you may use zsh.
+#
+############################################
+# Script for running Vp/Vs tomography
+############################################
+#
+############################################
+# Parameter file names
+############################################
+#
+# Current parameter grid
+#
+vg=vgrids.in
+#
+# Reference parameter grid
+#
+vgr=vgridsref.in
+#
+# Current S-wave grid
+#
+vgs=vgridss.in
+#
+# Current P-wave grid
+#
+vgp=vgridsp.in
+#
+# Reference S-wave grid
+#
+vgsr=vgridssr.in
+#
+# Reference P-wave grid
+#
+vgpr=vgridspr.in
+#
+# Reference interface grid
+#
+igr=interfacesref.in
+#
+# Current interface grid
+#
+ig=interfaces.in
+
+############################################
+# Data file names
+############################################
+#
+# Origin times for P
+#
+otp=otimesp.dat
+#
+# Origin times for S
+#
+ots=otimess.dat
+#
+# Generic origin times
+#
+ot=otimes.dat
+#
+# source-receiver associations
+#
+src=../src.dat
+#
+# S-ray paths
+#
+sray=rays.dat
+#
+# S sources (receivers)
+#
+ssr=sourcess.in
+#
+# P sources (receivers)
+#
+psr=sourcesp.in
+#
+# Generic sources file
+#
+gsr=sources.in
+############################################
+# Executables
+############################################
+#
+# Program for making initial vpvs grid
+#
+mkg=mkvpvs
+#
+# Program for calculating frechet derivatives and
+# ray path integrals
+#
+frps=frvpvs
+########################################################
+# Program and files for solving the forward problem with
+# the Fast Marching Method
+########################################################
+# Directory for P data
+ dirp=../invert_p
+# Directory for S data
+ dirs=../invert_s
+#
+###############################
+###############################
+cd=chdir
+###############################
+###############################
+#
+# Begin by copying across the
+# necessary parameter files
+#
+cp $dirp/$vg $vgp
+cp $dirp/$vgr $vgpr
+cp $dirs/$vg $vgs
+cp $dirs/$vgr $vgsr
+cp $dirp/$igr .
+cp $dirp/$ig .
+#
+# Copy across the data files
+#
+cp $dirp/$ot $otp
+cp $dirs/$ot $ots
+cp $dirs/$sray .
+cp $src .
+cp $dirp/$gsr $psr
+cp $dirs/$gsr $ssr

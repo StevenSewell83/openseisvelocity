@@ -1,0 +1,20 @@
+#!/usr/bin/ksh
+F90=gfortran
+cd source
+$F90 -o frvpvs frvpvs.f90
+$F90 -o gridloc gridloc.f90
+$F90 -o gridlocj gridlocj.f90
+$F90 -o jointimes jointimes.f90
+$F90 -o mkvpvs mkvpvs.f90
+$F90 -o obsdatai obsdatai.f90
+$F90 -o vpvsinv vpvsinv.f90
+$F90 -o vpvsresids vpvsresids.f90
+$F90 -o grid3dgi grid3dgi.f90
+$F90 -o gmtslicei gmtslicei.f90
+$F90 -o synthdatai synthdatai.f90
+mv frvpvs gridloc gridlocj ../bin
+mv jointimes mkvpvs obsdatai ../bin
+mv vpvsinv vpvsresids grid3dgi ../bin
+mv gmtslicei synthdatai ../bin
+cp cp_script tomo3di tomo3dj tomo3dps ../bin
+cd ..
