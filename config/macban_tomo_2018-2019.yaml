@@ -491,9 +491,9 @@ fmtomo:
   # Non-linear inversion iterations.
   iterations: 6
   # Damping (used when not running the trade-off).
-  damping: 50.0
+  damping: 1.0
   # Smoothing (used when not running the trade-off).
-  smoothing: 100.0
+  smoothing: 10.0
 
   # Trade-off sweep settings.
   tradeoff:
@@ -506,7 +506,7 @@ fmtomo:
     mode: sequential
     # How to choose the preferred values from the L-curve.
     # Allowed: max_curvature | manual
-    pick: max_curvature
+    pick: manual
     # Inversion iterations of each trade-off run (fewer than the final inversion).
     iterations: 3
     # Trade-off inversions run at the same time (None: n_jobs // 8, at least 1); the fm3d jobs
@@ -601,7 +601,7 @@ resolution:
     # Allowed: sin | block
     shape: sin
     # Alternate in depth as well (3-D); false = laterally varying only, constant in depth.
-    depth_cells: true
+    depth_cells: false
   # Spike tests.
   spikes: [{pct: 8.0, radius_km: 0.75, shape: gaussian, x_km: -1.5, y_km: 0.5, z_km: 2.0}, {pct: -8.0, radius_km: 0.75, shape: gaussian, x_km: 1.5, y_km: 0.5, z_km: 2.0}]
   # Example:
@@ -621,7 +621,7 @@ resolution:
     # Scale noise to each pick's uncertainty.
     from_pick_uncertainty: true
     # Noise scale factor.
-    scale: 1.0
+    scale: 0.35
     # Constant noise sigma, s, used when from_pick_uncertainty is false.
     sigma_s: 0.02
 
