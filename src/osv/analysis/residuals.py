@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 
 from osv.coords import azimuth_deg, hypocentral_distance_km
-from osv.io.fmtomo import read_arrivals, read_receivers, read_sources, read_stimes
+from osv.io.fmtomo import read_arrivals, read_observed, read_receivers, read_sources, read_stimes
 from osv.model3d.forward_check import residual_stats
 from osv.model3d.grid import KM_PER_DEG
 
@@ -124,6 +124,34 @@ def _station_positions(run: Path, nonlinear: bool) -> pd.DataFrame:
     return _read_positions(f, False)
 
 
+def _observed_times(run: Path, it: int, mapping: pd.DataFrame, nonlinear: bool) -> np.ndarray:
+    """Observed times the calculated times of iteration ``it`` refer to.
+
+    ``gridloc`` (nonlinear geometry) shifts each event's origin time and rewrites ``otimes.dat``
+    with the corrected times, so the mapping's (Stage 3) times only hold before the first
+    relocation.
+    """
+    t = mapping["time"].to_numpy(float)
+    if not nonlinear or it == 0:
+        return t
+    d = run / "iterations" / f"{it:02d}" / "otimes.dat"
+    its = available_iterations(run)
+    if not d.exists() and its and it == its[-1]:
+        d = run / "otimes.dat"
+    if not d.exists():
+        log.warning(
+            "%s: no origin-time-corrected otimes.dat for iteration %d; residuals use the "
+            "uncorrected observed times",
+            run,
+            it,
+        )
+        return t
+    obs = read_observed(d)
+    if len(obs) != len(t):
+        raise ValueError(f"{d} has {len(obs)} rows but the mapping {len(t)}")
+    return obs["time"].to_numpy(float)
+
+
 def residual_table(
     run_dir: str | Path,
     mapping: pd.DataFrame,
@@ -175,9 +203,10 @@ def residual_table(
     keep = [c for c in _KEEP if c in m]
     df = m[keep].copy()
     df["iteration"] = it
-    df["t_obs"] = m["time"].to_numpy(float)
+    t_obs = _observed_times(run, it, m, nonlinear)
+    df["t_obs"] = t_obs
     df["t_calc"] = arr["time"].to_numpy(float)
-    ok = arr["valid"].to_numpy() & (m["time"].to_numpy(float) >= -50.0)
+    ok = arr["valid"].to_numpy() & (t_obs >= -50.0)
     if "valid" in m:
         ok &= m["valid"].to_numpy(bool)
     df = df[ok].copy()

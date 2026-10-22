@@ -463,6 +463,54 @@ def test_tradeoff_and_invert_stages_end_to_end(workdir):
     assert not (iv / "run_P" / "frechet.dat").exists()
 
 
+@pytest.mark.integration
+@pytest.mark.skipif(not _have_tools(), reason="FMTOMO binaries not built")
+def test_tradeoff_stage_with_nonlinear_relocation(workdir):
+    """The sweep runs gridloc (tomo3di); every run must succeed (src.dat as gridloc reads it)."""
+    from osv.config import OSVConfig
+    from osv.io.fmtomo.extras import read_src_dat
+    from osv.stages import run_pipeline
+
+    try:
+        which_tool("gridloc")
+    except ToolNotFoundError:
+        pytest.skip("gridloc not built")
+    grid, base = _setup(n_src=20)
+    bg = checkerboard(grid, 5.0, 2.0, 0.0)
+    data = make_synthetic_data(
+        _gaussian_model(grid, bg, 5.0, 1.2), grid, base, workdir / "synth",
+        ResolutionConfig(noise={"scale": 0.2}), 1, 4,
+    )  # fmt: skip
+    project = workdir / "proj"
+    _fake_stage3(project, grid, base, bg, read_observed(data.otimes))
+    cfg = OSVConfig.model_validate(
+        {
+            "project": {"workdir": str(project), "n_jobs": 4},
+            "fmtomo": {
+                "package": "extras",
+                "relocate": "nonlinear",
+                "subspace_dimension": 30,
+                "save_rays": False,
+                "tradeoff": {
+                    "damping": [1.0, 10.0, 100.0],
+                    "smoothing": [1.0, 10.0, 100.0],
+                    "iterations": 1,
+                    "max_concurrent": 1,
+                },
+            },
+        }
+    )
+    assert run_pipeline(cfg, only="tradeoff", project_dir=project) == {"tradeoff": "ran"}
+    td = project / "05_tradeoff"
+    table = pd.read_csv(td / "tradeoff.csv")
+    assert table["success"].all(), table["flags"].tolist()
+    # gridloc's origin-time-corrected observed times are kept per iteration (residual tables)
+    assert list(td.rglob("iterations/01/otimes.dat"))
+    sd = read_src_dat(next(td.rglob("src.dat")))
+    assert sd.attrs["n_blocks"] == len(base.receivers.positions)  # stations
+    assert sd["id"].max() <= len(base.sources)  # event numbers
+
+
 def load_chosen_matches(td: Path, top: dict) -> bool:
     from osv.fmtomo.tradeoff import load_chosen
 

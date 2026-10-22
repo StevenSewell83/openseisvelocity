@@ -274,6 +274,7 @@ class ResolutionStage(Stage):
                 d.inputs.sources,
                 d.inputs.receivers,
                 d.inputs.otimes,
+                event_ids=d.mapping["event_idx"].to_numpy() if d.nonlinear else None,
             )
             for ph, d in data.items()
         }

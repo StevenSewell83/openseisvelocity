@@ -229,6 +229,29 @@ def test_orchestration_and_resume(tmp_path, fakes) -> None:
 
 
 @pytest.mark.filterwarnings("ignore::osv.resolution.models.UnderSamplingWarning")
+def test_cached_tests_rerun_when_the_test_or_noise_changes(tmp_path, fakes) -> None:
+    """The resume marker covers the test parameters, the true model and the noise settings."""
+    grid, base = _setup()
+    bg = _bg(grid)
+    cfg = _cfg()
+
+    def run(c):
+        return rn.run_resolution_tests(
+            rn.build_tests(c), base, grid, bg, c, tmp_path, n_jobs=2, chosen=(3.5, 7.0), seed=5
+        )
+
+    assert run(cfg).skipped == []
+    assert run(cfg).skipped == ["checker_3km_P"]  # unchanged: resumed
+    cols = cfg.model_copy(deep=True)
+    cols.resolution.checkerboard.depth_cells = False  # same name, different true model
+    assert run(cols).skipped == []
+    noisy = cols.model_copy(deep=True)
+    noisy.resolution.noise.scale = 0.5
+    assert run(noisy).skipped == []
+    assert run(noisy).skipped == ["checker_3km_P"]
+
+
+@pytest.mark.filterwarnings("ignore::osv.resolution.models.UnderSamplingWarning")
 def test_chosen_from_tradeoff_json_and_disk_guard(tmp_path, fakes) -> None:
     grid, base = _setup()
     (tmp_path / "t").mkdir()

@@ -23,6 +23,7 @@ resumable: a test whose ``summary.json`` says ``success`` for the same settings 
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
@@ -35,6 +36,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import xarray as xr
 
@@ -42,7 +44,7 @@ from osv.fmtomo import forward as _fwd
 from osv.fmtomo import invert as _inv
 from osv.fmtomo.controls import ModelInfo, build_controls
 from osv.fmtomo.metrics import attach_metrics
-from osv.fmtomo.rundir import assemble_run_dir
+from osv.fmtomo.rundir import assemble_run_dir, derive_src_dat
 from osv.fmtomo.tradeoff import HEAVY_FILES, load_chosen
 from osv.io.fmtomo import PathSpec, read_observed, read_sources, read_vgrids
 from osv.model3d.grid import ModelGrid
@@ -247,15 +249,51 @@ def _f(x: Any) -> float:
         return math.nan
 
 
-def _signature(test: ResolutionTest, d: float, s: float, n_iter: int, seed: int) -> dict[str, Any]:
-    return {
+def _signature(
+    test: ResolutionTest,
+    d: float,
+    s: float,
+    n_iter: int,
+    seed: int,
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Everything that makes a cached test result stale (compared by :func:`_read_summary`).
+
+    ``context`` holds the synthetic-data settings and the digest of the true model (see
+    :func:`_test_context`); without it only the regularisation and the test's parameters count.
+    """
+    sig = {
         "name": test.name,
         "phase": test.phase,
         "damping": float(d),
         "smoothing": float(s),
         "n_iter": int(n_iter),
         "seed": int(seed),
+        "params": json.loads(json.dumps(test.params, default=str)),
     }
+    if context is not None:
+        sig.update(context)
+    return sig
+
+
+def _test_context(
+    test: ResolutionTest, grid: ModelGrid, background: xr.Dataset, cfg: Any, uncertainty: float
+) -> dict[str, Any]:
+    """Synthetic-data settings and a digest of the true model (input models are objects)."""
+    rc = getattr(cfg, "resolution", None)
+    synth: dict[str, Any] = {"uncertainty": float(uncertainty)}
+    if rc is not None:
+        for k in ("noise", "hypocentre_noise_km"):
+            v = getattr(rc, k, None)
+            if v is not None:
+                synth[k] = v.model_dump(mode="json") if hasattr(v, "model_dump") else v
+    with NETCDF_LOCK:  # builders may read NetCDF files (HDF5 is not thread-safe)
+        true = test.build(grid, background)
+    h = hashlib.sha256()
+    for var in sorted(true.data_vars):
+        h.update(var.encode())
+        h.update(np.ascontiguousarray(true[var].values, dtype=np.float64).tobytes())
+    return {"synthetic_settings": json.loads(json.dumps(synth)), "true_digest": h.hexdigest()[:16]}
 
 
 def _read_summary(path: Path, sig: dict[str, Any]) -> dict[str, Any] | None:
@@ -338,7 +376,9 @@ def _run_test(
     timeout: float | None,
 ) -> dict[str, Any]:
     tdir = workdir / test.name
-    sig = _signature(test, d, s, n_iter, seed)
+    sig = _signature(
+        test, d, s, n_iter, seed, _test_context(test, grid, background, cfg, uncertainty)
+    )
     done = _read_summary(tdir, sig)
     if done is not None:
         log.info("resolution test %s already complete, skipping", test.name)
@@ -394,7 +434,17 @@ def _run_test(
         info = ModelInfo.from_model(grids, sources=sources, receivers=rec)
         ctl = build_controls(fm_run, info, phases=[test.phase])
         run = tdir / "run"
-        assemble_run_dir(run, grids, itf, pg, sources, rec, otimes, ctl, phase=test.phase)
+        src_dat = None
+        if ctl.stations_are_sources:
+            if base.event_ids is None or len(base.event_ids) != len(otimes):
+                raise ValueError(
+                    "nonlinear relocation needs the event number of every observation "
+                    "(BaseInputs.event_ids) to write src.dat"
+                )
+            src_dat = derive_src_dat(otimes, len(sources), base.event_ids)
+        assemble_run_dir(
+            run, grids, itf, pg, sources, rec, otimes, ctl, phase=test.phase, src_dat=src_dat
+        )
         res = _inv.run_inversion(
             run,
             ctl,
@@ -566,7 +616,20 @@ def run_resolution_tests(
     # background arrivals once per phase (signal statistics of every synthetic data set)
     bg_arr: dict[str, pd.DataFrame | None] = {}
     todo = [
-        t for t in tests if _read_summary(wd / t.name, _signature(t, d, s, n_iter, seed)) is None
+        t
+        for t in tests
+        if _read_summary(
+            wd / t.name,
+            _signature(
+                t,
+                d,
+                s,
+                n_iter,
+                seed,
+                _test_context(t, grid, background_model, cfg, uncertainty_km_s),
+            ),
+        )
+        is None
     ]
     for p in sorted({t.phase for t in todo}):
         base = bases[p] if bases else base_inputs  # type: ignore[index]

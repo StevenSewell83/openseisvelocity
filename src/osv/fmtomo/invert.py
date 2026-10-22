@@ -34,7 +34,8 @@ Deviations from the scripts (all deliberate):
 
 Per iteration ``run_dir/iterations/NN/`` receives ``summary.json`` and the logs; with
 ``keep_iterations`` also ``vgrids.in``, ``sources.in`` (or ``receivers.in`` for the nonlinear
-geometry, which holds the events) and ``stimes.dat``.  ``NN = 00`` is the starting state.
+geometry, which holds the events, and ``otimes.dat``, the observed times corrected by ``gridloc``
+for the origin-time shifts) and ``stimes.dat``.  ``NN = 00`` is the starting state.
 """
 
 from __future__ import annotations
@@ -623,8 +624,12 @@ def run_inversion(
             for name in ("vgrids.in", "sources.in", "stimes.dat", "mtimes.dat"):
                 if (run / name).exists():
                     shutil.copyfile(run / name, d / name)
-            if lp.nonlinear and (run / "receivers.in").exists():
-                shutil.copyfile(run / "receivers.in", d / "receivers.in")
+            if lp.nonlinear:
+                # gridloc moves the events (receivers.in) and corrects the observed times for
+                # their origin-time shifts (otimes.dat); mtimes.dat refers to these times
+                for name in ("receivers.in", "otimes.dat"):
+                    if (run / name).exists():
+                        shutil.copyfile(run / name, d / name)
         if inv_log is not None and inv_log.exists():
             shutil.copyfile(inv_log, d / "invert3d.log")
         (d / "residuals.txt").write_text(f"{rms[0]:.2f} {rms[1]:.5f} {rms[2]:.5f}\n")

@@ -337,7 +337,7 @@ def assemble_run_dir(
         ids = ctl.source_ids if ctl.source_ids is not None else tuple(range(1, len(sources) + 1))
         write("sourcederivs.in", write_source_ids, list(ids))
     if ctl.nonlinear:
-        sd = src_dat if src_dat is not None else derive_src_dat(obs, len(receivers.positions))
+        sd = src_dat if src_dat is not None else derive_src_dat(obs, len(sources))
         (root / "src.dat").write_text(format_src_dat(sd))
         put("src.dat", root / "src.dat")
         entries = [

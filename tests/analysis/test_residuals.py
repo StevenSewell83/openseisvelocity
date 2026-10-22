@@ -135,6 +135,24 @@ def test_residual_table_values(run) -> None:
     assert (t2["ev_lat"] != t0["ev_lat"]).all()  # final uses the relocated hypocentres
 
 
+def test_nonlinear_observed_times_are_gridloc_corrected(run) -> None:
+    """gridloc rewrites otimes.dat with origin-time shifts; residuals must use those times."""
+    from osv.analysis.residuals import _observed_times
+
+    root, m = run
+    obs = m.rename(columns={"receiver_idx": "receiver", "source_idx": "source", "ray_idx": "ray"})
+    obs = obs[["receiver", "source", "ray", "time", "uncertainty"]].assign(subray=0)
+    shift = 0.01 * m["source_idx"].to_numpy()  # one origin-time shift per event
+    write_observed(root / "iterations" / "01" / "otimes.dat", obs.assign(time=obs["time"] + shift))
+    write_observed(root / "otimes.dat", obs.assign(time=obs["time"] + 2 * shift))
+    t = m["time"].to_numpy()
+    np.testing.assert_allclose(_observed_times(root, 0, m, True), t)  # before any relocation
+    np.testing.assert_allclose(_observed_times(root, 1, m, True), t + shift, atol=1e-5)
+    # the final iteration without its own copy uses the run's otimes.dat
+    np.testing.assert_allclose(_observed_times(root, 2, m, True), t + 2 * shift, atol=1e-5)
+    np.testing.assert_allclose(_observed_times(root, 2, m, False), t)  # linear: Stage 3 times
+
+
 def test_invalid_picks_dropped_and_checks(run) -> None:
     root, m = run
     bad = m.copy()

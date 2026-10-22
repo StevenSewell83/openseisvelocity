@@ -915,7 +915,16 @@ class TradeoffStage(Stage):
                 wd,
                 ctx.n_jobs,
                 model_info=data.model_info,
-                assemble_kwargs={"phase": ph},
+                assemble_kwargs={
+                    "phase": ph,
+                    "src_dat": (
+                        nonlinear_src_dat(
+                            data.inputs.otimes, data.mapping, len(data.inputs.sources)
+                        )
+                        if data.nonlinear
+                        else None
+                    ),
+                },
                 on_run=after_run,
             )
             results[ph] = res

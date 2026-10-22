@@ -139,7 +139,8 @@ def test_nonlinear_run_dir(ex1, tmp_path):
         assert (tmp_path / name).is_file(), name
     assert "scorrect.in" not in man.files and "sourcederivs.in" not in man.files
     src = read_src_dat(tmp_path / "src.dat")
-    assert src.attrs["n_blocks"] == 100 and len(src) == int((ex1["otimes"]["time"] > 0).sum())
+    # one block per FMTOMO source: gridloc checks the count against the arrtimes.dat fields
+    assert src.attrs["n_blocks"] == 5 and len(src) == int((ex1["otimes"]["time"] > 0).sum())
     assert set(src["block"]) == {1, 2, 3, 4, 5} and set(src["id"]) <= set(range(1, 101))
     gs = read_gridsave(tmp_path / "gridsave.in")
     assert [(g.source, g.paths) for g in gs] == [(i, (1,)) for i in range(1, 6)]

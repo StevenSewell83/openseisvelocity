@@ -223,3 +223,35 @@ def test_make_synthetic_data_checkerboard(tmp_path) -> None:
     )  # fmt: skip
     assert res2.otimes.read_text() == res.otimes.read_text()
     assert np.isnan(res2.summary()["signal_rms_s"])
+
+
+@pytest.mark.filterwarnings("ignore::osv.resolution.models.UnderSamplingWarning")
+@pytest.mark.parametrize(("phase", "vtype", "n_types"), [("P", 1, 1), ("S", 1, 1), ("S", 2, 2)])
+def test_forward_times_velocity_type_matches_the_paths(
+    tmp_path, monkeypatch, phase, vtype, n_types
+) -> None:
+    """S with type-1 paths (separate layout) must run on Vs, not on Vp."""
+    from dataclasses import replace
+
+    from osv.io.fmtomo import read_vgrids
+    from osv.resolution import synth
+
+    grid, base = _setup()
+    model = checkerboard(grid, 5.0, 2.0, 0.0)
+    model["vs"] = model["vp"] / 1.8
+    src = [replace(s, paths=[PathSpec.direct(vtype)]) for s in base.sources]
+    seen = {}
+
+    def fake_fm3d(inputs, sources, receivers, n_jobs, workdir):
+        vg = read_vgrids(inputs / "vgrids.in")
+        seen["n"] = vg.n_types
+        seen["v1"] = float(np.median(vg.get(1, 1)["velocity"].values))
+        raise RuntimeError("stop")
+
+    monkeypatch.setattr(synth, "run_fm3d_parallel", fake_fm3d)
+    with pytest.raises(RuntimeError, match="stop"):
+        synth.forward_times(model, grid, replace(base, sources=src), tmp_path, phase=phase)
+    vp = float(np.median(grid.to_vgrids(model["vp"]).get(1, 1)["velocity"].values))
+    assert seen["n"] == n_types
+    want = vp / 1.8 if (phase, vtype) == ("S", 1) else vp
+    assert seen["v1"] == pytest.approx(want, rel=1e-3)

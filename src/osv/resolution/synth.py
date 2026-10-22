@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -83,7 +84,9 @@ class BaseInputs:
 
     Each item is an object of :mod:`osv.io.fmtomo` or a path to the file.  ``observed`` is the
     real ``otimes.dat`` (rows in ``arrivals.dat`` order; only its keys, validity and uncertainty
-    column are used).
+    column are used).  ``event_ids`` is the event number of each ``observed`` row for the
+    nonlinear (``gridloc``) geometry, where the receiver records are observations, not events;
+    it is needed to write ``src.dat``.
     """
 
     interfaces: InterfaceGrids | str | Path
@@ -92,6 +95,7 @@ class BaseInputs:
     receivers: Receivers | str | Path
     observed: pd.DataFrame | str | Path
     mode_set: ModeSet | None = None
+    event_ids: Sequence[int] | None = None
 
     def load(self) -> tuple[InterfaceGrids, PropGrid, list[Source], Receivers, pd.DataFrame]:
         itf = self.interfaces
@@ -157,14 +161,22 @@ def forward_times(
 ) -> pd.DataFrame:
     """Run ``fm3d`` on ``model`` for the real geometry; returns the ``arrivals.dat`` table.
 
-    ``sources`` override the source positions of ``base`` (same count and paths).
+    ``sources`` override the source positions of ``base`` (same count and paths).  As in
+    :func:`osv.model3d.forward_check`: when every path uses velocity type 1 (the separate P/S
+    layout) an S run gets Vs as its only velocity type; otherwise Vp is type 1 and Vs type 2.
+    A model without ``vs`` is used as given (an S model passed in ``vp``).
     """
     work = Path(workdir)
     inp = work / "inputs"
     inp.mkdir(parents=True, exist_ok=True)
     itf, pg, src, rec, _ = base.load()
-    with_s = phase.upper() == "S" and "vs" in model
-    write_fmtomo_vgrids(inp / "vgrids.in", write_vgrids(grid, model, with_s=with_s))
+    s_run = phase.upper() == "S" and "vs" in model
+    vts = {v for s in (sources if sources is not None else src) for p in s.paths for v in p.vtypes}
+    if s_run and vts <= {1}:
+        vg = grid.to_vgrids(model["vs"])
+    else:
+        vg = write_vgrids(grid, model, with_s=s_run)
+    write_fmtomo_vgrids(inp / "vgrids.in", vg)
     write_interfaces(inp / "interfaces.in", itf)
     write_propgrid(inp / "propgrid.in", pg)
     (base.mode_set or ModeSet()).write(inp / "mode_set.in")

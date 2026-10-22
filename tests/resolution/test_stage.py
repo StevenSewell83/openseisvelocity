@@ -246,6 +246,27 @@ def test_stage_run_with_fake_inversion(project, fakes, tmp_path) -> None:
     assert not list(sd.rglob("frechet.dat"))
 
 
+def test_nonlinear_src_dat_blocks_are_stations_ids_are_events(project, fakes, tmp_path) -> None:
+    """With gridloc relocation each test run gets the src.dat that gridloc expects."""
+    from osv.io.fmtomo import read_observed
+    from osv.io.fmtomo.extras import read_src_dat
+
+    fakes.inv.grid = project.grid
+    cfg = _cfg(tmp_path, package="extras", relocate="nonlinear")
+    ctx = _context(cfg, tmp_path)
+    st.ResolutionStage().run(ctx)
+    files = list(ctx.stage_dir.rglob("src.dat"))
+    assert files
+    obs = read_observed(project.dir / stage_dirname("build_model") / "fmtomo" / "otimes_P.dat")
+    for f in files:
+        sd = read_src_dat(f)
+        assert sd.attrs["n_blocks"] == 9  # one block per station
+        # block = station (old receiver), id = event (old source)
+        assert set(zip(sd["block"], sd["id"], strict=True)) == set(
+            zip(obs["receiver"], obs["source"], strict=True)
+        )
+
+
 @pytest.mark.filterwarnings("ignore::osv.resolution.models.UnderSamplingWarning")
 def test_stage_checks_failure_paths(project, fakes, tmp_path) -> None:
     fakes.inv.grid = project.grid
