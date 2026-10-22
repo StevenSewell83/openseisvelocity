@@ -14,6 +14,7 @@ from osv.config.schema import OSVConfig
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "gen_config_reference.py"
 REFERENCE = ROOT / "docs" / "config_reference.md"
+EXAMPLE = ROOT / "config" / "config.example.yaml"
 
 
 def _load_generator():
@@ -41,6 +42,25 @@ def test_config_reference_is_up_to_date():
     assert REFERENCE.read_text() == gen.generate(), (
         "docs/config_reference.md is stale; run: python scripts/gen_config_reference.py"
     )
+
+
+def test_config_example_is_up_to_date_and_loads(tmp_path):
+    from osv.config import generate_template, load_config
+
+    assert EXAMPLE.read_text() == generate_template(), (
+        "config/config.example.yaml is stale; run: python scripts/gen_config_reference.py"
+    )
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(EXAMPLE.read_text())
+    load_config(cfg)
+
+
+@pytest.mark.parametrize("path", sorted((ROOT / "config").glob("*.yaml")), ids=lambda p: p.name)
+def test_repo_configs_validate(path):
+    """Every config kept in config/ still matches the schema (input files need not exist)."""
+    from osv.config import load_config
+
+    load_config(path)
 
 
 def test_config_reference_covers_every_key():

@@ -86,7 +86,8 @@ OSV_RUN_E2E=1 OSV_TOOLS_DIR=$PWD/build/bin .venv/bin/pytest -q tests/test_e2e_ba
 `tests/` mirrors the package layout. Small fixtures live in `tests/data/` (each below 200 kB).
 Tests that need compiled `velest`/`fm3d` or data outside the repository (Station_Files, legacy
 VELEST examples) are marked `@pytest.mark.integration` and skip cleanly when unavailable.
-`tests/test_docs.py` checks that `docs/config_reference.md` matches the schema.
+`tests/test_docs.py` checks that `docs/config_reference.md` and `config/config.example.yaml`
+match the schema, and that every config in `config/` validates.
 
 ## Documentation
 
@@ -97,7 +98,8 @@ mkdocs serve                             # live preview
 mkdocs build --strict                    # what CI runs; fails on broken links
 ```
 
-`docs/config_reference.md` is generated; never edit it by hand.
+`docs/config_reference.md` and `config/config.example.yaml` (every setting with its default
+and a commented explanation) are generated; never edit them by hand.
 
 ## Beads workflow
 

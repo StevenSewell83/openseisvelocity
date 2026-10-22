@@ -6,6 +6,9 @@ Usage::
     python scripts/gen_config_reference.py            # rewrite docs/config_reference.md
     python scripts/gen_config_reference.py --check    # exit 1 if the file is out of date
 
+Both modes also cover ``config/config.example.yaml``, the fully commented example config
+(the same text ``osv init`` writes), when the default output is used.
+
 ``tests/test_docs.py`` runs the check so schema changes keep the docs in sync.
 """
 
@@ -23,8 +26,11 @@ from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
 from osv.config.schema import OSVConfig
+from osv.config.template import generate_template
 
-OUTPUT = Path(__file__).resolve().parents[1] / "docs" / "config_reference.md"
+ROOT = Path(__file__).resolve().parents[1]
+OUTPUT = ROOT / "docs" / "config_reference.md"
+EXAMPLE = ROOT / "config" / "config.example.yaml"
 
 _CONSTRAINTS = {
     "ge": ">=",
@@ -238,17 +244,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--output", type=Path, default=OUTPUT)
     args = ap.parse_args(argv)
-    text = generate()
+    targets = {args.output: generate()}
+    if args.output == OUTPUT:
+        targets[EXAMPLE] = generate_template()
     if args.check:
-        if not args.output.exists() or args.output.read_text() != text:
+        stale = [p for p, text in targets.items() if not p.exists() or p.read_text() != text]
+        for path in stale:
             print(
-                f"{args.output} is out of date; run: python scripts/gen_config_reference.py",
+                f"{path} is out of date; run: python scripts/gen_config_reference.py",
                 file=sys.stderr,
             )
-            return 1
-        return 0
-    args.output.write_text(text)
-    print(f"wrote {args.output}")
+        return 1 if stale else 0
+    for path, text in targets.items():
+        path.write_text(text)
+        print(f"wrote {path}")
     return 0
 
 
