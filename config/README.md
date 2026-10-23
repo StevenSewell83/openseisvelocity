@@ -6,6 +6,8 @@
 | `macban_tomo_2018-2019.yaml` | MacBan 2018-2019 (16 stations, OpenMEQ catalogue), fixed Vp/Vs from the Wadati diagram; P-only FMTOMO inversion with nonlinear relocation, damping 1 / smoothing 10 (manual), lateral-only checkerboards with noise scaled to the final P residuals (0.35). Work directory `/media/steve/fast9100/runs/macban_tomo_2018-2019/velest/runs`. |
 | `macban_tomo_2018-2019_nodelays.yaml` | Sensitivity test: as above without the VELEST station delays (`model3d.apply_velest_station_delays: false`). Work directory `.../velest/runs_nodelays`. |
 | `macban_tomo_2018-2019_ps.yaml` | Joint P+S inversion (`fmtomo.phases: [P, S]`, coupled `gridlocj` relocation on P, S-P and unique S times); resolution noise scaled to the final S residuals (0.75). Work directory `.../velest/runs_ps`. |
+| `macban_tomo_2018-2019_ps_terms.yaml` | Joint P+S with iterated station terms during the inversion (`fmtomo.station_terms: iterate`, experimental: drifts on this data set). Work directory `.../velest/runs_ps_terms`. |
+| `macban_tomo_2018-2019_ps_fixedterms.yaml` | Joint P+S with P and S station terms estimated in Stage 3 with the velocities fixed (`model3d.estimate_station_terms`), no VELEST delays, shallow nodes damped. Work directory `.../velest/runs_ps_fixedterms`. |
 | `macban_tomo_2018-2019_indS.yaml` | VELEST with an independent S velocity model. Run directory `.../macban_tomo_2018-2019/velest_indS`. |
 
 The project configs use absolute paths for `project.workdir` and the input files, because
