@@ -24,7 +24,8 @@
 #   --force              continue despite failed system checks (e.g. low disk space)
 #   -h, --help           show this help
 #
-# Environment variables: OSV_MICROMAMBA_URL (download URL of the micromamba tarball),
+# Environment variables: OSV_MICROMAMBA_URL (download URL of the micromamba tarball or binary;
+# tried before the built-in micro.mamba.pm and GitHub mirrors),
 # OSV_MICROMAMBA_HOME (default ~/.local/osv-micromamba), OSV_CONDA_EXE.
 # Re-running is safe: existing environments are updated, the build is incremental.
 set -euo pipefail
@@ -36,8 +37,13 @@ JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
 DEV=0; SKIP_TESTS=0; DRY_RUN=0; FORCE=0
 BUILD_ARGS=()
 MICROMAMBA_HOME="${OSV_MICROMAMBA_HOME:-$HOME/.local/osv-micromamba}"
-# micromamba tarball URL; {PLATFORM} is replaced by linux-64, linux-aarch64, osx-64 or osx-arm64.
-MICROMAMBA_URL="${OSV_MICROMAMBA_URL:-https://micro.mamba.pm/api/micromamba/{PLATFORM}/latest}"
+# micromamba download URLs, tried in order (a .tar.bz2 package or a bare executable);
+# {PLATFORM} is replaced by linux-64, linux-aarch64, osx-64 or osx-arm64.
+MICROMAMBA_URLS=(
+  ${OSV_MICROMAMBA_URL:+"$OSV_MICROMAMBA_URL"}
+  "https://micro.mamba.pm/api/micromamba/{PLATFORM}/latest"
+  "https://github.com/mamba-org/micromamba-releases/releases/latest/download/micromamba-{PLATFORM}"
+)
 MIN_DISK_GB_CONDA=6      # conda env with compilers + geo stack + package cache
 MIN_DISK_GB_VENV=2
 MIN_DISK_GB_GMT=3        # extra when GMT is installed
@@ -153,23 +159,43 @@ find_manager() {
 }
 
 bootstrap_micromamba() {
-  local plat url dest="$MICROMAMBA_HOME"
-  plat="$(platform)"; url="${MICROMAMBA_URL//\{PLATFORM\}/$plat}"
+  local plat url dest="$MICROMAMBA_HOME" u urls=()
+  plat="$(platform)"
+  for u in "${MICROMAMBA_URLS[@]}"; do urls+=("${u//\{PLATFORM\}/$plat}"); done
   log "No conda/mamba/micromamba found: installing micromamba into $dest (no sudo needed)"
-  echo "    from $url"
   if [[ $DRY_RUN -eq 1 ]]; then
-    echo "[dry-run] download $url and extract bin/micromamba to $dest/bin"
+    echo "[dry-run] download micromamba from the first reachable of: ${urls[*]}"
+    echo "[dry-run] install it as $dest/bin/micromamba"
     MGR="$dest/bin/micromamba"; MGR_KIND=micromamba; return
   fi
+  command -v curl >/dev/null || command -v wget >/dev/null || die "need curl or wget to download micromamba"
   mkdir -p "$dest/bin"
   local tmp; tmp="$(mktemp -d)"
   # shellcheck disable=SC2064
   trap "rm -rf '$tmp'" RETURN
-  if command -v curl >/dev/null; then curl -fsSL "$url" -o "$tmp/mm.tar.bz2" || die "download failed: $url (no internet? see docs/install.md, or use --venv / --conda-exe)"
-  elif command -v wget >/dev/null; then wget -q "$url" -O "$tmp/mm.tar.bz2" || die "download failed: $url"
-  else die "need curl or wget to download micromamba"; fi
-  tar -xjf "$tmp/mm.tar.bz2" -C "$tmp" bin/micromamba || die "could not extract micromamba (is bzip2 installed?)"
-  install -m 755 "$tmp/bin/micromamba" "$dest/bin/micromamba"
+  local got=""
+  for url in "${urls[@]}"; do
+    echo "    trying $url"
+    rm -rf "$tmp/dl" "$tmp/bin"
+    if command -v curl >/dev/null; then
+      curl -fsSL --retry 2 --connect-timeout 20 "$url" -o "$tmp/dl" || { warn "download failed: $url"; continue; }
+    else
+      wget -q "$url" -O "$tmp/dl" || { warn "download failed: $url"; continue; }
+    fi
+    if tar -tjf "$tmp/dl" bin/micromamba >/dev/null 2>&1; then
+      tar -xjf "$tmp/dl" -C "$tmp" bin/micromamba || { warn "could not extract micromamba from $url (is bzip2 installed?)"; continue; }
+      got="$tmp/bin/micromamba"
+    else
+      got="$tmp/dl"  # bare executable (GitHub release asset)
+    fi
+    chmod +x "$got"
+    if "$got" --version >/dev/null 2>&1; then break; fi
+    warn "file from $url is not a working micromamba executable"; got=""
+  done
+  [[ -n "$got" ]] || die "could not download micromamba from any of: ${urls[*]}
+    (no internet or a proxy/firewall? set https_proxy, point OSV_MICROMAMBA_URL at a reachable
+    copy (file:///path also works), pass --conda-exe for an existing conda, or use --venv; see docs/install.md)"
+  install -m 755 "$got" "$dest/bin/micromamba"
   classify "$dest/bin/micromamba"
 }
 

@@ -53,8 +53,10 @@ environment is not modified.
 | `--dry-run` | print the steps without doing anything |
 | `--force` | continue despite a failed disk-space check |
 
-Environment variables: `OSV_MICROMAMBA_URL` (micromamba download URL, `{PLATFORM}` is replaced
-by `linux-64`, `linux-aarch64`, `osx-64`...), `OSV_MICROMAMBA_HOME` (default
+Environment variables: `OSV_MICROMAMBA_URL` (micromamba download URL, a `.tar.bz2` package or
+a bare executable; `{PLATFORM}` is replaced by `linux-64`, `linux-aarch64`, `osx-64`...; tried
+before the built-in sources, which are micro.mamba.pm and then the GitHub
+`mamba-org/micromamba-releases` assets), `OSV_MICROMAMBA_HOME` (default
 `~/.local/osv-micromamba`).
 
 Examples:
@@ -76,8 +78,11 @@ Docker and Apptainer images are described in [containers.md](containers.md).
 ## Troubleshooting
 
 **No conda.** Nothing to do: the installer bootstraps micromamba. To use your own, put it
-on `PATH` or pass `--conda-exe`. On a machine without conda and without access to
-micro.mamba.pm, use `--venv`.
+on `PATH` or pass `--conda-exe`. If micro.mamba.pm (or the anaconda.org server it redirects to)
+cannot be reached, the installer falls back to the GitHub release of micromamba. If neither is
+reachable, download `micromamba-<platform>` from
+<https://github.com/mamba-org/micromamba-releases/releases> by hand and pass
+`OSV_MICROMAMBA_URL=file:///path/to/micromamba-linux-64`, or use `--venv`.
 
 **No internet / behind a proxy.** Set `http_proxy`/`https_proxy` (conda, curl and pip honour
 them). For offline machines: download the micromamba tarball elsewhere and point

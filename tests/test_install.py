@@ -101,6 +101,63 @@ def test_dry_run_gmt_default(tmp_path: Path) -> None:
     assert "environment-gmt.yml" in r.stdout
 
 
+def _bootstrap(tmp_path: Path, urls: list[str]) -> subprocess.CompletedProcess[str]:
+    """Run only bootstrap_micromamba() from install.sh with the given download URLs."""
+    text = INSTALL.read_text()
+    funcs = [line for line in text.splitlines() if line.startswith(("log()", "warn()", "die()"))]
+    for name in ("platform", "classify", "bootstrap_micromamba"):
+        start = text.index(f"\n{name}() {{") + 1
+        funcs.append(text[start : text.index("\n}\n", start) + 2])
+    quoted = " ".join(f"'{u}'" for u in urls)
+    script = "\n".join(
+        [
+            "set -euo pipefail",
+            *funcs,
+            f"DRY_RUN=0; MICROMAMBA_HOME='{tmp_path / 'mm'}'; MICROMAMBA_URLS=({quoted})",
+            'bootstrap_micromamba; "$MGR" --version',
+        ]
+    )
+    return subprocess.run(
+        ["bash", "-c", script], capture_output=True, text=True, timeout=60, check=False
+    )
+
+
+@pytest.mark.skipif(not shutil.which("curl"), reason="no curl")
+def test_bootstrap_micromamba_falls_back(tmp_path: Path) -> None:
+    fake = tmp_path / "pkg" / "bin" / "micromamba"
+    fake.parent.mkdir(parents=True)
+    fake.write_text("#!/bin/sh\necho 9.9.9\n")
+    fake.chmod(0o755)
+    tarball = tmp_path / "mm.tar.bz2"
+    subprocess.run(
+        ["tar", "-cjf", str(tarball), "-C", str(fake.parents[1]), "bin/micromamba"], check=True
+    )
+    junk = tmp_path / "junk"
+    junk.write_text("not a program\n")
+    missing = tmp_path / "missing"
+
+    # unreachable URL, then a conda package tarball
+    r = _bootstrap(tmp_path, [f"file://{missing}", f"file://{tarball}"])
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip().endswith("9.9.9")
+    # a file that is not micromamba, then a bare executable (GitHub release asset)
+    shutil.rmtree(tmp_path / "mm")
+    r = _bootstrap(tmp_path, [f"file://{junk}", f"file://{fake}"])
+    assert r.returncode == 0, r.stderr
+    assert "not a working micromamba" in r.stderr
+    # nothing reachable: a clear error
+    shutil.rmtree(tmp_path / "mm")
+    r = _bootstrap(tmp_path, [f"file://{missing}"])
+    assert r.returncode != 0
+    assert "could not download micromamba" in r.stderr
+
+
+def test_default_micromamba_urls_include_github_fallback() -> None:
+    text = INSTALL.read_text()
+    assert "micro.mamba.pm/api/micromamba/{PLATFORM}/latest" in text
+    assert "github.com/mamba-org/micromamba-releases/releases/latest/download" in text
+
+
 def test_environment_files_have_required_packages() -> None:
     text = (ROOT / "environment.yml").read_text()
     for pkg in (
