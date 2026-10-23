@@ -116,8 +116,8 @@ reference model at every iteration, so the terms keep taking over station-shaped
 iterations the P terms drifted by about 4.5 ms per iteration (from 55 % to 98 % of the VELEST delays,
 still growing), S terms at stations with 10-24 picks reached 0.3-0.5 s, and the misfit rose after
 iteration ~12. A prior on the terms cannot fix this (the station means are determined to a few ms
-by hundreds of picks). The result therefore depends on the number of iterations; terms estimated
-with the velocities fixed are the robust alternative.
+by hundreds of picks). The result therefore depends on the number of iterations; estimate the
+terms in Stage 3 with the velocities fixed instead (`model3d.estimate_station_terms`).
 
 ## Outputs of `invert` (names used by Stages 5 and 6)
 

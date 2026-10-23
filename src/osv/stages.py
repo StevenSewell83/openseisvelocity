@@ -247,6 +247,10 @@ class Stage:
             return cls.config_sections
         return DEFAULT_CONFIG_SECTIONS.get(cls.name, ())
 
+    def extra_sections(self, cfg: OSVConfig) -> tuple[str, ...]:
+        """Further config sections hashed only for this config (e.g. while an option is on)."""
+        return ()
+
     def inputs(self, ctx: StageContext) -> Sequence[Path]:
         """External input files/directories to hash (default: none)."""
         return ()
@@ -436,7 +440,7 @@ def _tool_hashes(stage: Stage) -> dict[str, Any]:
 
 def _fingerprint(ctx: StageContext, stage: Stage) -> dict[str, Any]:
     """Everything whose change makes the stage stale."""
-    sections = config_subset(ctx.config, stage.sections())
+    sections = config_subset(ctx.config, (*stage.sections(), *stage.extra_sections(ctx.config)))
     ups: dict[str, str] = {}
     for req in stage.requires:
         m = read_manifest(ctx.project_dir / stage_dirname(req))

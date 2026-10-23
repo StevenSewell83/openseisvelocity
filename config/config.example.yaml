@@ -362,6 +362,24 @@ model3d:
   # +10 % near-surface anomalies; default: none.
   # Allowed: borehole
   velest_station_delays_exclude: []
+  # Estimate P and S station terms in the 3-D starting model instead of using the VELEST delays:
+  # the events are relocated as configured in fmtomo (relocate, joint, gridloc) with the
+  # velocities fixed and the per-station residuals iterated to convergence; the terms are then
+  # subtracted from the observed times like the VELEST delays (S terms independent of P). Needs
+  # apply_velest_station_delays: false. Well-posed, unlike fmtomo.station_terms: iterate,
+  # because the velocities cannot take the signal back.
+  estimate_station_terms: false
+
+  # Settings of estimate_station_terms.
+  station_term_estimation:
+    # Relocation + term-update iterations (velocities fixed).
+    iterations: 20
+    # Converged when the last update changes no term by more than this, ms.
+    tolerance_ms: 1.0
+    # Stations with fewer valid picks of a phase get no term for that phase.
+    min_picks: 20
+    # invert3d damping of the estimation runs; large so that the velocities stay fixed.
+    damping: 100000.0
 
   # Inputs for the user-supplied model.
   user_model:

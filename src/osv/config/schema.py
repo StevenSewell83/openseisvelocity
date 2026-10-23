@@ -912,6 +912,23 @@ class ModelChecksConfig(_Base):
     )
 
 
+class StationTermEstimationConfig(_Base):
+    """Station terms estimated in the 3-D starting model (``model3d.estimate_station_terms``)."""
+
+    iterations: int = F(20, "Relocation + term-update iterations (velocities fixed).", ge=2)
+    tolerance_ms: float = F(
+        1.0, "Converged when the last update changes no term by more than this, ms.", gt=0
+    )
+    min_picks: int = F(
+        20, "Stations with fewer valid picks of a phase get no term for that phase.", ge=1
+    )
+    damping: float = F(
+        1.0e5,
+        "invert3d damping of the estimation runs; large so that the velocities stay fixed.",
+        gt=0,
+    )
+
+
 class Model3DConfig(_Base):
     """3-D starting model (Stage 3)."""
 
@@ -967,6 +984,18 @@ class Model3DConfig(_Base):
         "depth. 'borehole' on rk-nm-2017 lowered the borehole station residuals a little but "
         "moved them into +10 % near-surface anomalies; default: none.",
     )
+    estimate_station_terms: bool = F(
+        False,
+        "Estimate P and S station terms in the 3-D starting model instead of using the VELEST "
+        "delays: the events are relocated as configured in fmtomo (relocate, joint, gridloc) "
+        "with the velocities fixed and the per-station residuals iterated to convergence; the "
+        "terms are then subtracted from the observed times like the VELEST delays (S terms "
+        "independent of P). Needs apply_velest_station_delays: false. Well-posed, unlike "
+        "fmtomo.station_terms: iterate, because the velocities cannot take the signal back.",
+    )
+    station_term_estimation: StationTermEstimationConfig = FF(
+        StationTermEstimationConfig, "Settings of estimate_station_terms."
+    )
     user_model: UserModelConfig = FF(UserModelConfig, "Inputs for the user-supplied model.")
     uncertainty_from_weight: bool = F(
         False,
@@ -989,6 +1018,11 @@ class Model3DConfig(_Base):
             )
         if src in ("wells", "geology+wells") and um.wells.las_dir is None:
             raise ValueError(f"user_model.wells.las_dir: required when source is '{src}'")
+        if self.estimate_station_terms and self.apply_velest_station_delays:
+            raise ValueError(
+                "estimate_station_terms: set apply_velest_station_delays: false (the estimated "
+                "terms replace the VELEST delays)"
+            )
         return self
 
 
@@ -1428,3 +1462,12 @@ class OSVConfig(_Base):
     validation: ValidationConfig = FF(ValidationConfig, "Validation relocation (Stage 7).")
     plotting: PlottingConfig = FF(PlottingConfig, "Figure settings.")
     report: ReportConfig = FF(ReportConfig, "Project report (final stage).")
+
+    @model_validator(mode="after")
+    def _check(self) -> OSVConfig:
+        if self.model3d.estimate_station_terms and self.fmtomo.station_terms != "none":
+            raise ValueError(
+                "fmtomo.station_terms: must be 'none' with model3d.estimate_station_terms (the "
+                "Stage 3 terms are already subtracted; iterating them again drifts)"
+            )
+        return self

@@ -21,6 +21,10 @@ Open `report.html` first. A user model (grid, geology, wells; see `user_models.m
 - `model3d.surface` (`dem`, `flat`, `station_elevations`), `surface_smoothing_km`, `inputs.dem`.
 - `model3d.apply_velest_station_delays`: subtract the Stage 2 delays from the observed times (turn off
   when the inversion iterates its own station terms, `fmtomo.station_terms: iterate`).
+- `model3d.estimate_station_terms` (+ `station_term_estimation.iterations`, `tolerance_ms`, `min_picks`,
+  `damping`): instead of the VELEST delays, estimate P and S station terms in the 3-D starting model and
+  subtract them from the observed times (see "3-D station terms" below). Needs
+  `apply_velest_station_delays: false` and `fmtomo.station_terms: none`.
 - `model3d.extrusion.uncertainty`: a priori model uncertainty of `vgrids.in` (`constant`, `spread`, or
   `by_depth` pairs `[depth_top_km, km_s]`); FMTOMO's damping acts through it, so small values nearly fix
   the nodes (e.g. the shallow nodes when station terms are iterated).
@@ -39,6 +43,24 @@ Open `report.html` first. A user model (grid, geology, wells; see `user_models.m
 5. Forward check: trace all picks through the starting model, and through the 1-D background if the
    user model differs from it, in parallel (`osv.fmtomo.forward`).
 6. Write outputs, figures, checks and report.
+
+## 3-D station terms (`model3d.estimate_station_terms`)
+
+The VELEST delays are estimated in a flat-layered 1-D model with S delays fixed at P x Vp/Vs. With
+this option Stage 3 writes the uncorrected data, relocates the events as Stage 4 will (`fmtomo.relocate`,
+`joint`, `gridloc`; P and S coupled for `joint.relocation: joint`) in the starting model with the
+velocities fixed (`invert3d` damping `station_term_estimation.damping`), and after every relocation
+updates each station's P and S term by its event-demeaned mean residual (centred; stations with fewer
+than `min_picks` picks get none) until the terms stop drifting (mean change of the last 3 updates
+below `tolerance_ms`; single updates jitter by about 1 ms because grid-search relocation moves events
+between nodes). The terms are subtracted from the observed times like the VELEST delays, so Stages 4-6
+work on corrected data unchanged, and Stage 7 subtracts them from the held-out events before the 3-D
+relocation. Because the velocities cannot take the signal back, this converges (unlike
+`fmtomo.station_terms: iterate`); it assigns to the terms the per-station offsets the starting model
+plus relocation cannot explain - VELEST's rule, but in the 3-D model and with independent S terms.
+Outputs: `fmtomo/station_terms.csv` (`phase`, `station`, `term_s`, `n`), `fmtomo/station_terms_history.csv`,
+`station_term_estimation/` (the runs); summary `station_terms_rms_ms_<phase>`,
+`station_terms_drift_ms_<phase>`; QC `station_terms_not_converged`.
 
 ## Outputs (`04_build_model/`, names used by Stage 4)
 

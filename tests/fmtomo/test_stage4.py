@@ -596,3 +596,52 @@ def test_iterated_station_terms_recover_statics(workdir):
             assert (oc.run_dir / "station_terms.csv").exists()
             assert (oc.run_dir / "iterations" / "01" / "station_terms.csv").exists()
     assert rms["iterate"] < 0.7 * rms["none"]
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _have_tools(), reason="FMTOMO binaries not built")
+def test_stage3_station_term_estimation_converges(workdir):
+    """Velocities fixed: the estimated terms recover the statics and stop changing."""
+    from osv.config import OSVConfig
+    from osv.fmtomo.station_terms import delay_table, estimate_station_terms
+
+    try:
+        which_tool("gridloc")
+    except ToolNotFoundError:
+        pytest.skip("gridloc not built")
+    grid, base = _setup(n_src=25)
+    bg = checkerboard(grid, 5.0, 2.0, 0.0)
+    data = make_synthetic_data(
+        bg, grid, base, workdir / "synth", ResolutionConfig(noise={"scale": 0.1}), 3, 4
+    )
+    obs = read_observed(data.otimes)
+    n_st = len(base.receivers.positions)
+    static = np.random.default_rng(4).normal(0, 0.04, n_st)
+    static -= static.mean()
+    ok = obs["time"] > 0
+    obs.loc[ok, "time"] += static[obs.loc[ok, "receiver"].to_numpy() - 1]
+    project = workdir / "proj"
+    _fake_stage3(project, grid, base, bg, obs)
+    cfg = OSVConfig.model_validate(
+        {
+            "project": {"workdir": str(project), "n_jobs": 4},
+            "model3d": {
+                "apply_velest_station_delays": False,
+                "estimate_station_terms": True,
+                "station_term_estimation": {"iterations": 8, "min_picks": 5},
+            },
+            "fmtomo": {"package": "extras", "relocate": "nonlinear", "subspace_dimension": 20},
+        }
+    )
+    est = estimate_station_terms(project / "04_build_model", cfg, workdir / "est", 4)
+    t = est.terms.set_index("station")["term_s"]
+    true = pd.Series(static, index=[f"S{i}" for i in range(1, n_st + 1)])[t.index]
+    assert np.corrcoef(t, true)[0, 1] > 0.95
+    assert est.last_step_ms["P"] < 1.0 and not est.findings  # converged (no drift)
+    steps = est.history.groupby("iter")["delta_s"].apply(lambda d: d.abs().max()).to_numpy()
+    assert steps[-1] < 0.1 * steps[0]
+    dt = delay_table(est.terms)
+    assert {"sta", "alias", "ptcor", "stcor"} <= set(dt.columns) and dt["stcor"].isna().all()
+    # the velocities stayed fixed
+    its = est.iterations
+    assert float(its["model_rms_from_ref"].iloc[-1]) < 1e-3

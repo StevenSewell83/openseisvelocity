@@ -77,13 +77,23 @@ def _invert_vgrids(ctx: StageContext) -> Path | None:
 
 
 def _invert_station_terms(ctx: StageContext) -> Path | None:
-    """``station_terms.csv`` of a completed ``invert`` stage (iterated terms), else ``None``."""
-    from osv.fmtomo.stage import STATION_TERMS_FILE
+    """Station terms the 3-D model was inverted with, else ``None``.
 
-    if _invert_vgrids(ctx) is None:
-        return None
-    p = ctx.project_dir / stage_dirname("invert") / STATION_TERMS_FILE
-    return p if p.is_file() else None
+    ``station_terms.csv`` of a completed ``invert`` stage (``fmtomo.station_terms: iterate``) or
+    the terms estimated in Stage 3 (``model3d.estimate_station_terms``).
+    """
+    from osv.fmtomo.stage import STATION_TERMS_FILE
+    from osv.fmtomo.station_terms import TERMS_FILE
+
+    if _invert_vgrids(ctx) is not None:
+        p = ctx.project_dir / stage_dirname("invert") / STATION_TERMS_FILE
+        if p.is_file():
+            return p
+    if ctx.config.model3d.estimate_station_terms:
+        p = ctx.project_dir / stage_dirname("build_model") / FMTOMO_DIR / TERMS_FILE
+        if p.is_file():
+            return p
+    return None
 
 
 def _tradeoff_json(ctx: StageContext) -> Path | None:

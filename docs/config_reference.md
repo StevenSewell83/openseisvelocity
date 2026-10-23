@@ -251,6 +251,7 @@ Optional Vp/Vs grid search (final model).
 | `station_delays` | string | `diagnostic` | `diagnostic` \| `near_surface_layer` | 'diagnostic': only report station delays; 'near_surface_layer': model them. |
 | `apply_velest_station_delays` | boolean | `true` | - | Subtract the Stage 2 VELEST station delays (ptcor/stcor) from the observed travel times written for FMTOMO. FMTOMO cannot invert for station terms, so on (default) the station-scale near-surface signal, which the 3-D grid cannot resolve, is removed using the minimum 1-D model's delays (on rk-nm-2017 station mean residuals correlate with VELEST delays at r=0.92). Off: the 3-D model must explain the delays itself, which maps them into the shallowest nodes (rk-nm-2017 A/B: without delays the dVp std rises from 2.7 to 8.3 % with up to 50 % near-surface anomalies and the validation gain over 1-D drops; keep on). |
 | `velest_station_delays_exclude` | list[string] \| string | `[]` | `borehole` | Stations whose VELEST delays are NOT subtracted when apply_velest_station_delays is on: a list of station codes/aliases, or 'borehole' (all stations with a sensor depth > 0). Their delays are relative to the reference station and may double-count the sensor depth. 'borehole' on rk-nm-2017 lowered the borehole station residuals a little but moved them into +10 % near-surface anomalies; default: none. |
+| `estimate_station_terms` | boolean | `false` | - | Estimate P and S station terms in the 3-D starting model instead of using the VELEST delays: the events are relocated as configured in fmtomo (relocate, joint, gridloc) with the velocities fixed and the per-station residuals iterated to convergence; the terms are then subtracted from the observed times like the VELEST delays (S terms independent of P). Needs apply_velest_station_delays: false. Well-posed, unlike fmtomo.station_terms: iterate, because the velocities cannot take the signal back. |
 | `uncertainty_from_weight` | boolean | `false` | - | Increase the a priori uncertainty where the user model's weight is low (factor uncertainty_low_weight_factor at weight 0, capped by extrusion max_km_s). |
 | `uncertainty_low_weight_factor` | number | `2.0` | >= 1 | Uncertainty multiplier at zero user-model weight (uncertainty_from_weight). |
 
@@ -289,6 +290,17 @@ A priori uncertainty written to the vgrids.
 | `min_km_s` | number | `0.1` | > 0 | Lower bound for mode 'spread', km/s. |
 | `max_km_s` | number | `1.0` | > 0 | Upper bound for mode 'spread', km/s. |
 | `by_depth` | list[[number, number]] | `[]` | - | For mode 'by_depth': [depth_top_km, uncertainty_km_s] pairs with ascending tops; each value applies from its top down to the next top, the first also above it (Vp and Vs). Example: `by_depth: [[-1.0, 0.05], [0.5, 0.3]]` |
+
+### `model3d.station_term_estimation`
+
+Settings of estimate_station_terms.
+
+| Key | Type | Default | Allowed / constraints | Description |
+|---|---|---|---|---|
+| `iterations` | integer | `20` | >= 2 | Relocation + term-update iterations (velocities fixed). |
+| `tolerance_ms` | number | `1.0` | > 0 | Converged when the last update changes no term by more than this, ms. |
+| `min_picks` | integer | `20` | >= 1 | Stations with fewer valid picks of a phase get no term for that phase. |
+| `damping` | number | `100000.0` | > 0 | invert3d damping of the estimation runs; large so that the velocities stay fixed. |
 
 ### `model3d.user_model`
 

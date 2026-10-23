@@ -69,6 +69,8 @@ HYPOCENTRES = "velest"
 SUBSET = "calibration"
 FMTOMO_DIR = "fmtomo"
 FORWARD_DIR = "forward_check"
+#: runs of ``model3d.estimate_station_terms`` (heavy files removed)
+TERM_ESTIMATION_DIR = "station_term_estimation"
 MODEL_FILE = "starting_model.nc"
 GRID_FILE = "grid.json"
 FORWARD_FILE = "forward_check.json"
@@ -223,6 +225,12 @@ class BuildModelStage(Stage):
         FORWARD_FILE,
     )
 
+    def extra_sections(self, cfg: Any) -> tuple[str, ...]:
+        # the term estimation relocates as the inversion will
+        if cfg.model3d.estimate_station_terms:
+            return ("fmtomo.relocate", "fmtomo.package", "fmtomo.gridloc", "fmtomo.joint")
+        return ()
+
     def inputs(self, ctx: StageContext) -> list[Path]:
         return _user_inputs(ctx.config)
 
@@ -280,31 +288,38 @@ class BuildModelStage(Stage):
             return interface_depth_at(interfaces, grid, lat, lon, 0)
 
         # ---- FMTOMO data
-        datas: dict[str, FmtomoData] = {}
-        for ph in _phases(cfg):
-            try:
-                datas[ph] = build_fmtomo_data(
-                    picks,
-                    events,
-                    stations,
-                    cfg,
-                    grid=grid,
-                    hypocentres=HYPOCENTRES,
-                    subset=SUBSET,
-                    phases=(ph,),
-                    hypocentre_table=hyp_placed,
-                    station_delays=tabs.get("station_delays"),
-                    surface_depth_km=surface,
-                    layout="separate",
-                )
-            except FmtomoDataError as exc:
-                if ph == "P":
-                    raise
-                findings.append(_finding("no_s_data", "warn", f"S data not written: {exc}"))
-                continue
-            for m in datas[ph].findings:
-                findings.append(_finding(f"data_{ph}", "info", f"{ph}: {m}"))
-        dp = datas["P"]
+        def build_data(cfg_: Any, delays: pd.DataFrame | None, report: bool) -> dict:
+            out: dict[str, FmtomoData] = {}
+            for ph in _phases(cfg):
+                try:
+                    out[ph] = build_fmtomo_data(
+                        picks,
+                        events,
+                        stations,
+                        cfg_,
+                        grid=grid,
+                        hypocentres=HYPOCENTRES,
+                        subset=SUBSET,
+                        phases=(ph,),
+                        hypocentre_table=hyp_placed,
+                        station_delays=delays,
+                        surface_depth_km=surface,
+                        layout="separate",
+                    )
+                except FmtomoDataError as exc:
+                    if ph == "P":
+                        raise
+                    if report:
+                        findings.append(_finding("no_s_data", "warn", f"S data not written: {exc}"))
+                    continue
+                if report:
+                    for m in out[ph].findings:
+                        findings.append(_finding(f"data_{ph}", "info", f"{ph}: {m}"))
+            return out
+
+        datas = build_data(cfg, tabs.get("station_delays"), not cfg.model3d.estimate_station_terms)
+        if cfg.model3d.estimate_station_terms:
+            datas = self._estimate_terms(ctx, interfaces, grid, model, datas, build_data, findings)
 
         # ---- forward check
         ref = VelestReference(
@@ -325,20 +340,7 @@ class BuildModelStage(Stage):
 
         # ---- outputs
         out = ctx.stage_dir
-        fm = out / FMTOMO_DIR
-        fm.mkdir(exist_ok=True)
-        write_interfaces(fm / "interfaces.in", interfaces)
-        write_propgrid(fm / "propgrid.in", grid.propgrid)
-        for ph, data in datas.items():
-            names = _FILES[ph]
-            write_vgrids(fm / names["vgrids"], phase_vgrids(model.dataset, grid, data))
-            tmp = fm / f"_tmp_{ph}"
-            files = write_fmtomo_data(data, tmp)
-            for src, dst in ((k, v) for k, v in names.items() if k in files):
-                shutil.move(str(files[src]), fm / dst)
-            shutil.rmtree(tmp, ignore_errors=True)
-            data.events.to_csv(fm / names["events"], index=False)
-        dp.stations.to_csv(fm / "stations.csv", index=False)
+        self._write_fmtomo(out, interfaces, grid, model, datas)
         _save_model(model.dataset, out / MODEL_FILE)
         (out / GRID_FILE).write_text(json.dumps(grid_summary(grid), indent=2))
         fcd = out / FORWARD_DIR
@@ -352,6 +354,82 @@ class BuildModelStage(Stage):
         self._headline(ctx, grid, model, datas, fc)
         ctx._build_state = SimpleNamespace(wells=inp.wells)  # type: ignore[attr-defined]
         self.plot(ctx)
+
+    @staticmethod
+    def _write_fmtomo(
+        out: Path,
+        interfaces: Any,
+        grid: ModelGrid,
+        model: StartingModel,
+        datas: dict[str, FmtomoData],
+    ) -> None:
+        """FMTOMO hand-off files of all phases in ``out/fmtomo/``."""
+        fm = out / FMTOMO_DIR
+        fm.mkdir(exist_ok=True)
+        write_interfaces(fm / "interfaces.in", interfaces)
+        write_propgrid(fm / "propgrid.in", grid.propgrid)
+        for ph, data in datas.items():
+            names = _FILES[ph]
+            write_vgrids(fm / names["vgrids"], phase_vgrids(model.dataset, grid, data))
+            tmp = fm / f"_tmp_{ph}"
+            files = write_fmtomo_data(data, tmp)
+            for src, dst in ((k, v) for k, v in names.items() if k in files):
+                shutil.move(str(files[src]), fm / dst)
+            shutil.rmtree(tmp, ignore_errors=True)
+            data.events.to_csv(fm / names["events"], index=False)
+        datas["P"].stations.to_csv(fm / "stations.csv", index=False)
+
+    def _estimate_terms(
+        self,
+        ctx: StageContext,
+        interfaces: Any,
+        grid: ModelGrid,
+        model: StartingModel,
+        datas: dict[str, FmtomoData],
+        build_data: Any,
+        findings: list[QCFinding],
+    ) -> dict[str, FmtomoData]:
+        """``model3d.estimate_station_terms``: terms with fixed velocities, then corrected data."""
+        from osv.fmtomo.station_terms import (
+            HISTORY_FILE,
+            TERMS_FILE,
+            delay_table,
+            estimate_station_terms,
+        )
+
+        cfg = ctx.config
+        out = ctx.stage_dir
+        _save_model(model.dataset, out / MODEL_FILE)
+        (out / GRID_FILE).write_text(json.dumps(grid_summary(grid), indent=2))
+        self._write_fmtomo(out, interfaces, grid, model, datas)
+        ctx.logger.info("estimating P/S station terms with fixed velocities")
+        est = estimate_station_terms(out, cfg, out / TERM_ESTIMATION_DIR, ctx.n_jobs)
+        cfg_apply = cfg.model_copy(deep=True)
+        cfg_apply.model3d.apply_velest_station_delays = True
+        cfg_apply.model3d.velest_station_delays_exclude = []
+        corrected = build_data(cfg_apply, delay_table(est.terms), False)
+        fm = out / FMTOMO_DIR
+        est.terms.to_csv(fm / TERMS_FILE, index=False)
+        est.history.to_csv(fm / HISTORY_FILE, index=False)
+        est.iterations.to_csv(out / TERM_ESTIMATION_DIR / "iterations.csv", index=False)
+        findings.extend(est.findings)
+        for ph, t in est.terms.groupby("phase"):
+            w = t["n"].clip(lower=1).to_numpy(float)
+            v = t["term_s"].to_numpy(float)
+            rms = 1000 * float(np.sqrt(np.average(v**2, weights=w)))
+            findings.append(
+                _finding(
+                    f"data_{ph}",
+                    "info",
+                    f"{ph}: 3-D station terms (fixed velocities) subtracted from the observed "
+                    f"times: rms {rms:.1f} ms, range {1000 * v.min():.0f}..{1000 * v.max():.0f} ms "
+                    f"({int((t['n'] >= cfg.model3d.station_term_estimation.min_picks).sum())} "
+                    f"stations), drift {est.last_step_ms.get(ph, 0.0):.2f} ms per update",
+                )
+            )
+            ctx.summary[f"station_terms_rms_ms_{ph}"] = round(rms, 1)
+            ctx.summary[f"station_terms_drift_ms_{ph}"] = round(est.last_step_ms.get(ph, 0), 2)
+        return corrected
 
     @staticmethod
     def _headline(
