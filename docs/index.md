@@ -64,6 +64,7 @@ osv run -c projects/mysite/config.yaml # all stages; open <workdir>/index.html w
 New to the workflow? Follow the [tutorial](tutorial.md), which walks through a real dataset
 stage by stage. Looking for a setting? See the [configuration reference](config_reference.md).
 Something went wrong? See [troubleshooting](troubleshooting.md).
+Locating earthquakes with the model in NonLinLoc (e.g. OpenMEQ)? See the [NonLinLoc export](nlloc_export.md).
 
 ## Command line
 

@@ -185,6 +185,43 @@ def plot_cmd(
     typer.echo(f"{_stages.normalise_name(stage)}: figures regenerated")
 
 
+@app.command("export-nlloc")
+def export_nlloc_cmd(
+    out: Path = typer.Option(..., "--out", "-o", help="Output directory."),
+    config: Path = CONFIG_OPT,
+    root: str = typer.Option("model", "--root", help="File root: <root>.P.mod.hdr, ..."),
+    origin: tuple[float, float] | None = typer.Option(
+        None, "--origin", help="TRANS SIMPLE origin LAT LON (default: coordinates.origin)."
+    ),
+    half_width_km: float = typer.Option(10.5, "--half-width-km", help="x, y extent +-, km."),
+    zmin_km: float = typer.Option(-2.5, "--zmin-km", help="Top of the grid, km (down +)."),
+    zmax_km: float = typer.Option(10.5, "--zmax-km", help="Bottom of the grid, km."),
+    spacing_km: float = typer.Option(0.05, "--spacing-km", help="Node spacing, km."),
+) -> None:
+    """Export the final 3-D model and station corrections for NonLinLoc."""
+    from osv.fmtomo.nlloc_export import NllocExportError, export_nlloc
+
+    cfg = _load_cfg(config)
+    try:
+        res = export_nlloc(
+            cfg.project.workdir,
+            cfg,
+            out,
+            root=root,
+            origin=origin,
+            half_width_km=half_width_km,
+            z_range_km=(zmin_km, zmax_km),
+            spacing_km=spacing_km,
+        )
+    except NllocExportError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    for ph, r in res.roots.items():
+        typer.echo(f"{ph}: {r}.hdr/.buf")
+    src = res.summary["station_corrections"]
+    typer.echo(f"station corrections: {res.delays_csv or 'none'} ({src})")
+
+
 @config_app.command("show")
 def config_show_cmd(
     config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Config file."),

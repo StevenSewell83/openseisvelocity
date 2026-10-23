@@ -41,6 +41,7 @@ nav:
       - "5. Analysis": stage5_analysis.md
       - "6. Resolution tests": stage6_resolution.md
       - "7. Validation": stage7_validation.md
+  - NonLinLoc export: nlloc_export.md
   - User models: user_models.md
   - Conventions: conventions.md
   - Configuration reference: config_reference.md
