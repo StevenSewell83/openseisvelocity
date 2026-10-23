@@ -94,6 +94,27 @@ def _gradient_nodes(tops: np.ndarray) -> np.ndarray:
     return mids
 
 
+def by_depth_profile(depth: np.ndarray, pairs: Any) -> np.ndarray:
+    """Piecewise-constant profile of ``[depth_top_km, value]`` pairs at ``depth`` (km).
+
+    Each value holds from its top down to the next top; depths above the first top take the
+    first value.
+
+    Raises
+    ------
+    ExtrusionError
+        If ``pairs`` is empty, the tops are not strictly ascending or a value is not positive.
+    """
+    arr = np.asarray(pairs, dtype=float).reshape(-1, 2)
+    if not len(arr):
+        raise ExtrusionError("uncertainty.by_depth needs at least one [depth_top_km, km_s] pair")
+    tops, vals = arr[:, 0], arr[:, 1]
+    if np.any(np.diff(tops) <= 0) or np.any(vals <= 0):
+        raise ExtrusionError("uncertainty.by_depth: tops must ascend and values be > 0")
+    idx = np.clip(np.searchsorted(tops, np.asarray(depth, dtype=float), side="right") - 1, 0, None)
+    return vals[idx]
+
+
 def profile_1d(
     depth: np.ndarray,
     tops: np.ndarray,
@@ -206,10 +227,12 @@ def extrude_1d(
         if sp_s is None:
             sp_s = sp_p / (vpvs if vpvs else float(np.mean(vp / vs)))
         unc_p, unc_s = np.clip(sp_p, u_lo, u_hi), np.clip(sp_s, u_lo, u_hi)
-    elif u_mode == "constant":
+    elif u_mode in ("constant", "by_depth"):
         unc_p = unc_s = np.full(tops.size, u_val)
     else:
-        raise ExtrusionError(f"uncertainty.mode must be 'constant' or 'spread', got {u_mode!r}")
+        raise ExtrusionError(
+            f"uncertainty.mode must be 'constant', 'spread' or 'by_depth', got {u_mode!r}"
+        )
 
     z = grid.depth_full
     ds = grid.template()
@@ -222,6 +245,14 @@ def extrude_1d(
             np.broadcast_to(prof[:, None, None], shape).copy(),
             {"units": "km/s"},
         )
+    if u_mode == "by_depth":
+        prof = by_depth_profile(z, getattr(uncertainty, "by_depth", []))
+        for name in ("vp_unc", "vs_unc"):
+            ds[name] = (
+                ("depth", "lat", "lon"),
+                np.broadcast_to(prof[:, None, None], shape).copy(),
+                {"units": "km/s"},
+            )
     ds.attrs.update(
         {"extrusion_mode": mode, "smoothing_km": float(smoothing_km), "uncertainty_mode": u_mode}
     )

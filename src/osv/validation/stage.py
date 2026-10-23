@@ -76,6 +76,16 @@ def _invert_vgrids(ctx: StageContext) -> Path | None:
     return None
 
 
+def _invert_station_terms(ctx: StageContext) -> Path | None:
+    """``station_terms.csv`` of a completed ``invert`` stage (iterated terms), else ``None``."""
+    from osv.fmtomo.stage import STATION_TERMS_FILE
+
+    if _invert_vgrids(ctx) is None:
+        return None
+    p = ctx.project_dir / stage_dirname("invert") / STATION_TERMS_FILE
+    return p if p.is_file() else None
+
+
 def _tradeoff_json(ctx: StageContext) -> Path | None:
     """``tradeoff.json`` of a completed ``tradeoff`` stage, else ``None``."""
     d = ctx.project_dir / stage_dirname("tradeoff")
@@ -174,7 +184,7 @@ class ValidationStage(Stage):
     outputs = (EVENTS_FILE, STATS_FILE)
 
     def inputs(self, ctx: StageContext) -> list[Path]:
-        paths = [p for p in (_invert_vgrids(ctx),) if p is not None]
+        paths = [p for p in (_invert_vgrids(ctx), _invert_station_terms(ctx)) if p is not None]
         if ctx.config.validation.bootstrap.enabled:
             t = _tradeoff_json(ctx)
             if t is not None:
@@ -238,6 +248,9 @@ class ValidationStage(Stage):
             stations=stations,
             model_inputs_dir=fm_dir,
             options=_options(cfg),
+            station_terms_3d=(
+                pd.read_csv(t) if (t := _invert_station_terms(ctx)) is not None else None
+            ),
         )
         findings = findings + list(res.findings)
 

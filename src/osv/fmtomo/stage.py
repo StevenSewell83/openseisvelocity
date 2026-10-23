@@ -126,6 +126,10 @@ __all__ = [
 ]
 
 FMTOMO_DIR = "fmtomo"
+#: final station terms (``fmtomo.station_terms = 'iterate'``) in the invert stage directory
+STATION_TERMS_FILE = "station_terms.csv"
+#: QC: the last station-term update should change no term by more than this (ms)
+STATION_TERM_CONVERGED_MS = 2.0
 STARTING_MODEL = "starting_model.nc"
 #: Stage 3 file names per phase
 _FILES = {
@@ -306,6 +310,34 @@ def to_nonlinear_geometry(
         no,
     )
     return new, nm
+
+
+def station_term_spec(fm: Any, pd_: PhaseData) -> _inv.StationTermSpec | None:
+    """Station-term template of a phase when ``fm.station_terms == 'iterate'`` (else None).
+
+    Keys: the station name (``mapping["station"]``) and the event (``event_idx`` for the
+    nonlinear geometry, else the FMTOMO source) of every ``otimes`` row.
+    """
+    if getattr(fm, "station_terms", "none") != "iterate":
+        return None
+    o, m = pd_.inputs.otimes.reset_index(drop=True), pd_.mapping.reset_index(drop=True)
+    if len(o) != len(m):
+        raise StageError(f"station terms: otimes ({len(o)}) and mapping ({len(m)}) rows differ")
+    station = (
+        m["station"].astype(str).to_numpy()
+        if "station" in m
+        else (o["source"] if pd_.nonlinear else o["receiver"]).to_numpy()
+    )
+    event = (m["event_idx"] if pd_.nonlinear else o["source"]).to_numpy()
+    opt = fm.station_term_iteration
+    return _inv.StationTermSpec(
+        station=np.asarray(station),
+        event=np.asarray(event),
+        every=int(opt.every),
+        start_iteration=int(opt.start_iteration),
+        relaxation=float(opt.relaxation),
+        min_picks=int(opt.min_picks),
+    )
 
 
 def nonlinear_src_dat(otimes: pd.DataFrame, mapping: pd.DataFrame, n_sources: int) -> pd.DataFrame:
@@ -529,6 +561,7 @@ def invert_phase(
         timeout=timeout,
         mem_per_job_gb=mem_per_job_gb,
         stop_on_error=True,
+        station_terms=station_term_spec(fm, pd_),
     )
     return _finish_phase(
         run,
@@ -765,9 +798,20 @@ def invert_coupled(
         (root / sub / "src.dat").write_text(format_src_dat(sd))
         d.mapping.to_csv(root / sub / "mapping.csv", index=False)
     kw: dict[str, Any] = {"timeout": timeout, "mem_per_job_gb": mem_per_job_gb}
+    terms = {ph: station_term_spec(fm, datas[ph]) for ph in ("P", "S")}
+    if any(t is not None for t in terms.values()) and mode != "joint":
+        raise StageError(
+            "fmtomo.station_terms: iterate supports single-phase runs and "
+            f"joint.relocation: joint, not {mode!r}"
+        )
     jres: JointInversionResult | None = None
     if mode == "joint":
-        jres = run_joint_inversion(root, ctl, n_iter, n_jobs, True, **kw)
+        st_kw = {k: v for k, v in terms.items() if v is not None}
+        if st_kw:
+            # the phase run directories keep the order of the mapping rows
+            for ph, t in st_kw.items():
+                t.event = ids[ph]
+        jres = run_joint_inversion(root, ctl, n_iter, n_jobs, True, station_terms=st_kw, **kw)
         res = {"P": jres.p, "S": jres.s}
         notes = list(jres.flags)
     else:
@@ -916,6 +960,7 @@ class TradeoffStage(Stage):
                 ctx.n_jobs,
                 model_info=data.model_info,
                 assemble_kwargs={
+                    "run_station_terms": station_term_spec(fm_ph, data),
                     "phase": ph,
                     "src_dat": (
                         nonlinear_src_dat(
@@ -1290,6 +1335,22 @@ class InvertStage(Stage):
         pd.concat(rel, ignore_index=True).to_parquet(out / "relocation.parquet")
         if hyp:
             pd.concat(hyp, ignore_index=True).to_parquet(out / "hypocentres_iterations.parquet")
+        terms = [
+            oc.result.station_terms.assign(phase=ph)
+            for ph, oc in outcomes.items()
+            if oc.result.station_terms is not None
+        ]
+        if terms:
+            t = pd.concat(terms, ignore_index=True)[["phase", "station", "term_s", "n"]]
+            t.to_csv(out / STATION_TERMS_FILE, index=False)
+            hist = [
+                oc.result.station_term_history.assign(phase=ph)
+                for ph, oc in outcomes.items()
+                if oc.result.station_term_history is not None
+            ]
+            pd.concat(hist, ignore_index=True).to_csv(
+                out / "station_terms_history.csv", index=False
+            )
         first = next(iter(reg.values()))
         (out / "chosen_regularisation.json").write_text(
             json.dumps(
@@ -1354,6 +1415,32 @@ class InvertStage(Stage):
                     float(oc.relocation["d3_km"].median()), 3
                 )
             s[f"wall_s_{ph}"] = round(float(oc.result.wall_s), 1)
+            st = oc.result.station_terms
+            if st is not None and len(st):
+                w = st["n"].to_numpy(float)
+                v = st["term_s"].to_numpy(float)
+                s[f"station_terms_rms_ms_{ph}"] = round(
+                    1000 * float(np.sqrt(np.average(v**2, weights=np.maximum(w, 1)))), 1
+                )
+                s[f"station_terms_range_ms_{ph}"] = [
+                    round(1000 * float(v.min()), 1),
+                    round(1000 * float(v.max()), 1),
+                ]
+                h = oc.result.station_term_history
+                if h is not None and len(h):
+                    last = h[h["iter"] == h["iter"].max()]
+                    step = 1000 * float(last["delta_s"].abs().max())
+                    s[f"station_terms_last_step_ms_{ph}"] = round(step, 2)
+                    if step > STATION_TERM_CONVERGED_MS:
+                        ctx.add_check(
+                            QCFinding(
+                                "station_terms_not_converged",
+                                "warn",
+                                f"{ph}: the last station-term update still changed a term by "
+                                f"{step:.1f} ms (> {STATION_TERM_CONVERGED_MS:g} ms); run more "
+                                "iterations or raise station_term_iteration.relaxation",
+                            )
+                        )
 
     # ------------------------------------------------------------------ plots
     def plot(self, ctx: StageContext) -> None:

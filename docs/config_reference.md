@@ -284,10 +284,11 @@ A priori uncertainty written to the vgrids.
 
 | Key | Type | Default | Allowed / constraints | Description |
 |---|---|---|---|---|
-| `mode` | string | `constant` | `constant` \| `spread` | 'constant': the same value everywhere; 'spread': half the p05-p95 spread of each 1-D layer (needs *_p05/*_p95 columns), bounded by min/max_km_s. |
+| `mode` | string | `constant` | `constant` \| `spread` \| `by_depth` | 'constant': the same value everywhere; 'spread': half the p05-p95 spread of each 1-D layer (needs *_p05/*_p95 columns), bounded by min/max_km_s; 'by_depth': the values of by_depth by node depth. FMTOMO's damping acts through this a priori uncertainty, so a small value nearly fixes the nodes (e.g. shallow layers that would otherwise absorb station statics). |
 | `value_km_s` | number | `0.3` | > 0 | Uncertainty for mode 'constant', km/s. |
 | `min_km_s` | number | `0.1` | > 0 | Lower bound for mode 'spread', km/s. |
 | `max_km_s` | number | `1.0` | > 0 | Upper bound for mode 'spread', km/s. |
+| `by_depth` | list[[number, number]] | `[]` | - | For mode 'by_depth': [depth_top_km, uncertainty_km_s] pairs with ascending tops; each value applies from its top down to the next top, the first also above it (Vp and Vs). Example: `by_depth: [[-1.0, 0.05], [0.5, 0.3]]` |
 
 ### `model3d.user_model`
 
@@ -406,7 +407,7 @@ FMTOMO inversion (Stage 4).
 | `min_velocity_km_s` | number | `0.5` | > 0 | Minimum velocity permitted by invert3d, km/s. |
 | `min_interface_distance_km` | number | `0.07` | >= 0 | Minimum distance between interfaces kept by invert3d, km. |
 | `save_rays` | boolean | `true` | - | Save ray paths (rays.dat) in the forward runs. |
-| `station_terms` | string | `none` | `none` \| `preapply` | FMTOMO has no station terms. 'preapply' subtracts per-station mean residuals (supplied to assemble_run_dir) from the observed times before inversion. |
+| `station_terms` | string | `none` | `none` \| `preapply` \| `iterate` | FMTOMO has no station terms. 'preapply' subtracts per-station mean residuals (supplied to assemble_run_dir) from the observed times before inversion. 'iterate' estimates P and S station terms in the 3-D model between the iterations (station_term_iteration) and subtracts them from the observed times; use it with model3d.apply_velest_station_delays: false and strongly damped shallow nodes (model3d.extrusion.uncertainty.mode: by_depth) so the terms, not the near-surface velocities, take the station statics. |
 
 ### `fmtomo.tradeoff`
 
@@ -420,6 +421,17 @@ Trade-off sweep settings.
 | `pick` | string | `max_curvature` | `max_curvature` \| `manual` | How to choose the preferred values from the L-curve. |
 | `iterations` | integer | `3` | >= 1 | Inversion iterations of each trade-off run (fewer than the final inversion). |
 | `max_concurrent` | integer \| null | `null` | >= 1 | Trade-off inversions run at the same time (None: n_jobs // 8, at least 1); the fm3d jobs are split between them. |
+
+### `fmtomo.station_term_iteration`
+
+Settings of fmtomo.station_terms: iterate.
+
+| Key | Type | Default | Allowed / constraints | Description |
+|---|---|---|---|---|
+| `every` | integer | `1` | >= 1 | Update the terms after every n-th iteration. |
+| `start_iteration` | integer | `1` | >= 1 | First iteration after which the terms are updated. |
+| `relaxation` | number | `1.0` | > 0, <= 1 | Fraction of each station's mean residual added per update. |
+| `min_picks` | integer | `5` | >= 1 | Stations with fewer valid picks of a phase get no term for that phase. |
 
 ### `fmtomo.gridloc`
 

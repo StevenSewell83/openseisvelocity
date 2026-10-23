@@ -128,13 +128,16 @@ def _observed_times(run: Path, it: int, mapping: pd.DataFrame, nonlinear: bool) 
     """Observed times the calculated times of iteration ``it`` refer to.
 
     ``gridloc`` (nonlinear geometry) shifts each event's origin time and rewrites ``otimes.dat``
-    with the corrected times, so the mapping's (Stage 3) times only hold before the first
-    relocation.
+    with the corrected times, and iterated station terms shift each station's times, so the
+    mapping's (Stage 3) times only hold before the first update.  The iteration's own copy of
+    ``otimes.dat`` is used whenever it exists.
     """
     t = mapping["time"].to_numpy(float)
-    if not nonlinear or it == 0:
+    if it == 0:
         return t
     d = run / "iterations" / f"{it:02d}" / "otimes.dat"
+    if not d.exists() and not nonlinear:
+        return t
     its = available_iterations(run)
     if not d.exists() and its and it == its[-1]:
         d = run / "otimes.dat"

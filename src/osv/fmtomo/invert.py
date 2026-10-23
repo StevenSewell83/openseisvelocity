@@ -40,6 +40,7 @@ for the origin-time shifts) and ``stimes.dat``.  ``NN = 00`` is the starting sta
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import math
@@ -70,6 +71,7 @@ from osv.io.fmtomo import (
     read_sources,
     read_vgrids,
     write_gridsave,
+    write_observed,
 )
 from osv.io.fmtomo.times import INVALID_OBSERVED_BELOW
 from osv.tools import ToolError, run_tool
@@ -126,6 +128,10 @@ class InversionResult:
     wall_s: float = 0.0
     forward_wall_s: float = 0.0
     n_forward: int = 0
+    #: accumulated station terms (``station``, ``term_s``, ``n``) when they were iterated
+    station_terms: pd.DataFrame | None = None
+    #: per-update rows (``iter``, ``station``, ``delta_s``, ``term_s``, ``n``)
+    station_term_history: pd.DataFrame | None = None
 
     @property
     def initial_rms_ms(self) -> float:
@@ -134,6 +140,152 @@ class InversionResult:
     @property
     def final_rms_ms(self) -> float:
         return float(self.iterations["rms_ms"].iloc[-1])
+
+
+# ---------------------------------------------------------------------------------------
+# station terms (FMTOMO has none: estimated between iterations, subtracted from otimes.dat)
+# ---------------------------------------------------------------------------------------
+@dataclass
+class StationTermSpec:
+    """Iterated station terms of one run directory (``fmtomo.station_terms = 'iterate'``).
+
+    ``station`` and ``event`` give the station and event key of every ``otimes.dat`` row (any
+    hashable ids; for the nonlinear geometry the FMTOMO source and the event number).  After
+    every ``every``-th iteration from ``start_iteration`` on (never after the last one), each
+    station's mean residual, with each event's mean removed first (the origin-time trade-off),
+    is multiplied by ``relaxation``, centred (pick-weighted mean zero: a common constant is an
+    origin time) and subtracted from that station's observed times.  Stations with fewer than
+    ``min_picks`` valid picks get no term.  ``terms`` accumulates the subtracted values (s).
+    """
+
+    station: np.ndarray
+    event: np.ndarray
+    every: int = 1
+    start_iteration: int = 1
+    relaxation: float = 1.0
+    min_picks: int = 5
+    terms: dict[object, float] = field(default_factory=dict)
+    counts: dict[object, int] = field(default_factory=dict)
+    history: list[dict[str, object]] = field(default_factory=list)
+
+    def fresh(self) -> StationTermSpec:
+        """Copy with no accumulated terms (the passed spec is a reusable template)."""
+        return dataclasses.replace(self, terms={}, counts={}, history=[])
+
+    def due(self, it: int) -> bool:
+        return it >= self.start_iteration and (it - self.start_iteration) % self.every == 0
+
+    def table(self) -> pd.DataFrame:
+        rows = [
+            {"station": s, "term_s": float(v), "n": int(self.counts.get(s, 0))}
+            for s, v in self.terms.items()
+        ]
+        return pd.DataFrame(rows, columns=["station", "term_s", "n"])
+
+    def history_table(self) -> pd.DataFrame:
+        return pd.DataFrame(self.history, columns=["iter", "station", "delta_s", "term_s", "n"])
+
+
+def update_station_terms(
+    run: Path,
+    spec: StationTermSpec,
+    it: int,
+    *,
+    src_dat: Path | None = None,
+    block_offset: int = 0,
+) -> pd.DataFrame:
+    """Estimate the station-term change from ``otimes.dat`` - ``arrivals.dat`` and apply it.
+
+    Rewrites ``run/otimes.dat`` (valid rows of each station shifted by ``-delta``) and returns
+    the per-station changes (``station``, ``delta_s``, ``term_s``, ``n``).  ``gridloc`` and
+    ``gridlocj`` rebuild ``otimes.dat`` from the times in ``src.dat`` at every relocation, so for
+    the nonlinear geometry the same shift is applied there: ``src_dat`` entries are matched by
+    block = FMTOMO source of the row + ``block_offset`` (the S blocks of the joint file follow
+    the P stations) and id = ``spec.event``.
+
+    Raises
+    ------
+    InversionError
+        If the files and the spec disagree in length or order.
+    """
+    obs = read_observed(run / "otimes.dat")
+    arr = read_arrivals(run / "arrivals.dat")
+    n = len(spec.station)
+    if not (len(obs) == len(arr) == n == len(spec.event)):
+        raise InversionError(
+            f"station terms: otimes.dat ({len(obs)}), arrivals.dat ({len(arr)}) and the "
+            f"station/event keys ({n}) must have one row per observation"
+        )
+    keys = ["receiver", "source", "ray"]
+    if not (obs[keys].to_numpy() == arr[keys].to_numpy()).all():
+        raise InversionError("station terms: otimes.dat and arrivals.dat rows are not paired")
+    t_obs = obs["time"].to_numpy(float)
+    ok = (
+        (t_obs > INVALID_OBSERVED_BELOW)
+        & (t_obs > 0)
+        & arr["valid"].to_numpy(bool)
+        & np.isfinite(arr["time"].to_numpy(float))
+    )
+    df = pd.DataFrame(
+        {
+            "station": spec.station,
+            "event": spec.event,
+            "r": t_obs - arr["time"].to_numpy(float),
+        }
+    )[ok]
+    df["r"] -= df.groupby("event")["r"].transform("mean")
+    g = df.groupby("station")["r"]
+    stat = pd.DataFrame({"mean": g.mean(), "n": g.size()})
+    stat["delta"] = np.where(stat["n"] >= spec.min_picks, stat["mean"] * spec.relaxation, 0.0)
+    use = stat["n"] >= spec.min_picks
+    if use.any():
+        stat.loc[use, "delta"] -= np.average(stat.loc[use, "delta"], weights=stat.loc[use, "n"])
+    delta = stat["delta"].to_dict()
+    shift = np.array([delta.get(s, 0.0) for s in spec.station], dtype=float)
+    valid_obs = t_obs > 0
+    obs.loc[valid_obs, "time"] = t_obs[valid_obs] - shift[valid_obs]
+    write_observed(run / "otimes.dat", obs)
+    if src_dat is not None:
+        _shift_src_dat(
+            src_dat,
+            obs["source"].to_numpy(int)[valid_obs] + int(block_offset),
+            np.asarray(spec.event)[valid_obs],
+            shift[valid_obs],
+        )
+    out = []
+    for s, row in stat.iterrows():
+        spec.terms[s] = spec.terms.get(s, 0.0) + float(row["delta"])
+        spec.counts[s] = int(row["n"])
+        rec = {
+            "iter": it,
+            "station": s,
+            "delta_s": float(row["delta"]),
+            "term_s": spec.terms[s],
+            "n": int(row["n"]),
+        }
+        spec.history.append(rec)
+        out.append(rec)
+    res = pd.DataFrame(out, columns=["iter", "station", "delta_s", "term_s", "n"])
+    log.info(
+        "iteration %d: station terms updated (max |delta| %.1f ms, rms term %.1f ms)",
+        it,
+        1000 * float(res["delta_s"].abs().max()) if len(res) else 0.0,
+        1000 * float(np.sqrt(np.mean(np.square(res["term_s"])))) if len(res) else 0.0,
+    )
+    return res
+
+
+def _shift_src_dat(path: Path, block: np.ndarray, ident: np.ndarray, shift: np.ndarray) -> None:
+    """Subtract ``shift`` from the ``src.dat`` times of the (block, id) pairs given."""
+    from osv.io.fmtomo.extras import format_src_dat, read_src_dat
+
+    sd = read_src_dat(path)
+    key = pd.MultiIndex.from_arrays([block.astype(int), ident.astype(int)])
+    d = pd.Series(shift, index=key)
+    d = d[~d.index.duplicated()]
+    got = pd.MultiIndex.from_arrays([sd["block"].to_numpy(int), sd["id"].to_numpy(int)])
+    sd["time"] = sd["time"].to_numpy(float) - d.reindex(got).fillna(0.0).to_numpy(float)
+    path.write_text(format_src_dat(sd))
 
 
 # ---------------------------------------------------------------------------------------
@@ -481,6 +633,7 @@ def run_inversion(
     mem_per_job_gb: float | None = None,
     stop_on_error: bool = True,
     on_iteration: Callable[[int, dict[str, object]], None] | None = None,
+    station_terms: StationTermSpec | None = None,
 ) -> InversionResult:
     """Run the FMTOMO iteration loop in an assembled run directory.
 
@@ -505,6 +658,9 @@ def run_inversion(
         If False, return the partial result with ``success=False`` instead.
     on_iteration
         Optional callback ``(iter, summary_dict)``.
+    station_terms
+        Iterate station terms between the iterations (see :class:`StationTermSpec`); the
+        result's ``station_terms`` then holds the accumulated values.
 
     Returns
     -------
@@ -519,6 +675,8 @@ def run_inversion(
     """
     if controls.joint is not None or controls.vpvs is not None:
         raise NotImplementedError("joint P+S / Vp-Vs inversions are not driven by run_inversion")
+    if station_terms is not None:
+        station_terms = station_terms.fresh()
     ctl = controls.runs[phase] if phase else controls.run
     run = Path(run_dir)
     for need in ("vgridsref.in", "interfacesref.in", "sourcesref.in", "mode_set.in"):
@@ -563,6 +721,10 @@ def run_inversion(
         result.n_forward = lp.n_fwd
         result.final_model = run / "vgrids.in" if (run / "vgrids.in").exists() else None
         result.final_sources = run / ("receivers.in" if lp.nonlinear else "sources.in")
+        if station_terms is not None:
+            result.station_terms = station_terms.table()
+            result.station_term_history = station_terms.history_table()
+            result.station_terms.to_csv(run / "station_terms.csv", index=False)
         return result
 
     state: dict[str, object] = {"prev_model": None, "ref_model": None, "prev_hypo": None}
@@ -624,9 +786,10 @@ def run_inversion(
             for name in ("vgrids.in", "sources.in", "stimes.dat", "mtimes.dat"):
                 if (run / name).exists():
                     shutil.copyfile(run / name, d / name)
-            if lp.nonlinear:
+            if lp.nonlinear or station_terms is not None:
                 # gridloc moves the events (receivers.in) and corrects the observed times for
-                # their origin-time shifts (otimes.dat); mtimes.dat refers to these times
+                # their origin-time shifts (otimes.dat), station terms shift them per station;
+                # mtimes.dat refers to these times
                 for name in ("receivers.in", "otimes.dat"):
                     if (run / name).exists():
                         shutil.copyfile(run / name, d / name)
@@ -701,6 +864,16 @@ def run_inversion(
                     f"iteration {it}: invert3d did not report successful completion; see {inv_log}"
                 )
             snapshot(it, rms, t0, info, reloc_rms, inv_log)
+            if station_terms is not None and k < n_iter and station_terms.due(it):
+                upd = update_station_terms(
+                    run,
+                    station_terms,
+                    it,
+                    src_dat=run / "src.dat"
+                    if lp.nonlinear and (run / "src.dat").exists()
+                    else None,
+                )
+                upd.to_csv(dirs[it] / "station_terms.csv", index=False)
     except FmtomoFormatError as exc:
         err = InversionError(f"unreadable program output: {exc}")
         flags.append(f"error: {err}")

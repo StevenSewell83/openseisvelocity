@@ -30,6 +30,9 @@ Open `report.html` of each stage first.
   smoothing, then smoothing at the chosen damping; `full_grid`), `pick` (`max_curvature`, `manual`),
   `iterations` (per sweep run, fewer than the final inversion), `max_concurrent` (sweep runs at the same
   time; each gets `project.n_jobs / max_concurrent` `fm3d` processes).
+- `fmtomo.station_terms`: `none`; `preapply` (fixed terms supplied to `assemble_run_dir`); `iterate`
+  (P and S station terms estimated in the 3-D model between the iterations, see below), with
+  `fmtomo.station_term_iteration.every`, `start_iteration`, `relaxation`, `min_picks`.
 - `plotting.dws_mask_threshold`: absolute derivative-weight-sum threshold of the coverage mask;
   `plotting.depth_slices_km`, `plotting.profiles` for the model figures.
 - `project.n_jobs`: parallel `fm3d` processes.
@@ -90,6 +93,32 @@ and Stages 5-7 treat them like separate runs. Details of the wiring (`osv.fmtomo
 The disk guard (`osv.fmtomo.stage.MIN_FREE_GB`, 3 GB) stops the stages cleanly before a run if too little
 space is left; finished runs are kept.
 
+## Iterated station terms (`fmtomo.station_terms: iterate`, experimental)
+
+FMTOMO has no station parameters. With `iterate`, after each iteration (from `start_iteration`,
+every `every`-th, never after the last) each station's mean residual is computed per phase, after
+removing each event's mean (the origin-time trade-off); it is multiplied by `relaxation`, centred
+(pick-weighted mean zero, since a common constant is an origin time) and subtracted from that
+station's observed times in `otimes.dat` and, for the nonlinear geometry, in the `src.dat` from
+which `gridloc`/`gridlocj` rebuild `otimes.dat` at every relocation. Stations with fewer than
+`min_picks` picks of a phase get no term. The trade-off sweep, the resolution tests (same procedure
+on the synthetic data) and the validation (final P terms subtracted from the held-out events) use
+the same terms. Combine it with `model3d.apply_velest_station_delays: false` and strongly damped
+shallow nodes (`model3d.extrusion.uncertainty.mode: by_depth`, e.g. `[[-1.0, 0.05], [0.5, 0.3]]`) so
+that the terms, not the near-surface velocities, take the station statics. Supported for single-phase
+runs and `joint.relocation: joint`. S terms converge more slowly than P (they trade off with Vs and
+the shared relocation); check `station_terms_last_step_ms_S` (QC `station_terms_not_converged`).
+
+**Caveat (MacBan 2018-2019, 16 stations, compact cluster):** on real data the undamped alternation
+does not converge. A station constant trades off with the velocities along that station's ray
+bundle, the hypocentres and the origin times, and `invert3d` damps the velocities toward the
+reference model at every iteration, so the terms keep taking over station-shaped signal: over 30
+iterations the P terms drifted by about 4.5 ms per iteration (from 55 % to 98 % of the VELEST delays,
+still growing), S terms at stations with 10-24 picks reached 0.3-0.5 s, and the misfit rose after
+iteration ~12. A prior on the terms cannot fix this (the station means are determined to a few ms
+by hundreds of picks). The result therefore depends on the number of iterations; terms estimated
+with the velocities fixed are the robust alternative.
+
 ## Outputs of `invert` (names used by Stages 5 and 6)
 
 | file | content |
@@ -100,6 +129,7 @@ space is left; finished runs are kept.
 | `relocation.parquet` | hypocentre shifts against the Stage 3 positions (`dx_km`, `dy_km`, `dz_km`, `d3_km`, `dt_s`), `phase` |
 | `inversion_iterations.csv` | per phase and iteration: `rms_ms`, `variance_s2`, `chi2` (reduced), `model_variance`, roughness, `n_valid`, `n_lost`, `vel_min`, `vel_max`, `frac_at_min_velocity`, `mean_hypo_shift_km`, ... |
 | `chosen_regularisation.json` | damping, smoothing and where they came from |
+| `station_terms.csv`, `station_terms_history.csv` | with `fmtomo.station_terms: iterate`: final term per `phase` and `station` (`term_s`, subtracted from the observed times; `n` picks) and every update (`iter`, `delta_s`) |
 | `exports/` | NetCDF, VTK and CSV of the model with masks and the relocated hypocentres |
 | `run_<phase>/` | the run directory without heavy files (`iterations/NN/` keeps model, sources, calculated times and logs of every iteration) |
 

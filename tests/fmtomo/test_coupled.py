@@ -6,6 +6,7 @@ real Extras programs on a tiny synthetic geometry with P and S synthetic data.
 
 from __future__ import annotations
 
+import dataclasses
 import importlib.util  # noqa: E402
 import shutil
 import tempfile
@@ -451,3 +452,49 @@ def test_read_otimes_wrapped_rows(tmp_path):
         ["2", "1", "1", "0", "1.14323282", "0.01"],
     ]
     assert hdr.split() == ["2"]
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _have_joint_tools(), reason="FMTOMO/Extras binaries not built")
+def test_joint_ps_iterated_station_terms(workdir):
+    """Separate P and S statics added to the data come back as P and S station terms."""
+    grid, base, bg, datas = _synthetic_ps(workdir)
+    rng = np.random.default_rng(2)
+    n_st = len(datas["P"].inputs.sources)
+    statics = {"P": rng.normal(0, 0.04, n_st), "S": rng.normal(0, 0.07, n_st)}
+    for ph, sv in statics.items():
+        sv -= sv.mean()
+        o = datas[ph].inputs.otimes.copy()
+        ok = o["time"] > 0
+        o.loc[ok, "time"] += sv[o.loc[ok, "source"].to_numpy() - 1]  # stations = FMTOMO sources
+        datas[ph] = dataclasses.replace(
+            datas[ph], inputs=dataclasses.replace(datas[ph].inputs, otimes=o)
+        )
+    fm = FmtomoConfig(
+        package="extras",
+        relocate="nonlinear",
+        phases=["P", "S"],
+        joint={"relocation": "joint"},
+        iterations=4,
+        damping=50.0,
+        smoothing=50.0,
+        subspace_dimension=20,
+        save_rays=False,
+        station_terms="iterate",
+    )
+    reg = {p: {"damping": 50.0, "smoothing": 50.0, "source": "config"} for p in ("P", "S")}
+    co = st.invert_coupled(workdir / "out", datas, fm, reg, 4, mode="joint", dws_threshold=1.0)
+    assert co.joint is not None and co.joint.success
+    for ph in ("P", "S"):
+        t = co.outcomes[ph].result.station_terms
+        assert t is not None and len(t) == n_st
+        idx = t["station"].astype(str).str.extract(r"(\d+)$")[0].astype(int).to_numpy() - 1
+        # S converges more slowly (its terms trade off with Vs and the shared relocation):
+        # about 0.89 after 3 updates, 0.92 after 7
+        assert np.corrcoef(t["term_s"], statics[ph][idx])[0, 1] > (0.9 if ph == "P" else 0.85), ph
+        h = co.outcomes[ph].result.station_term_history
+        steps = h.groupby("iter")["delta_s"].apply(lambda d: d.abs().max()).to_numpy()
+        assert steps[-1] < steps[0] / 3, ph  # the updates shrink
+    # P+S not allowed in the p_fixed_for_s mode
+    with pytest.raises(st.StageError, match="iterate"):
+        st.invert_coupled(workdir / "o2", datas, fm, reg, 4, mode="p_fixed_for_s")

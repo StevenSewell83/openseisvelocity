@@ -363,6 +363,7 @@ def _run_one(
     fm = cfg.fmtomo if hasattr(cfg, "fmtomo") else cfg
     fm_run = fm.model_copy(update={"damping": float(d), "smoothing": float(s)})
     ctl = build_controls(fm_run, model_info)
+    terms = assemble_kw.get("run_station_terms")
     assemble_run_dir(
         run,
         inputs.grids,
@@ -372,7 +373,7 @@ def _run_one(
         inputs.receivers,
         inputs.otimes,
         ctl,
-        **assemble_kw,
+        **{k: v for k, v in assemble_kw.items() if k != "run_station_terms"},
     )
     try:
         res = _inv.run_inversion(
@@ -385,6 +386,7 @@ def _run_one(
             mem_per_job_gb=mem_per_job_gb,
             stop_on_error=False,
             phase=assemble_kw.get("phase"),
+            station_terms=terms,
         )
         row = _row_from_result(res, d, s, n_iter, run)
     except Exception as exc:  # noqa: BLE001 - one failed combination must not kill the sweep
@@ -473,8 +475,9 @@ def run_tradeoff(
     n_jobs
         Total ``fm3d`` processes; split between the concurrent inversions.
     model_info, assemble_kwargs
-        Passed to :func:`build_controls` / :func:`assemble_run_dir` (``phase``,
-        ``station_terms``, ...).
+        Passed to :func:`build_controls` / :func:`assemble_run_dir` (``phase``, ``src_dat``,
+        ...); the key ``run_station_terms`` (a :class:`osv.fmtomo.invert.StationTermSpec`) is
+        not an assembler argument but goes to :func:`osv.fmtomo.invert.run_inversion`.
     max_concurrent
         Concurrent inversions (default ``tradeoff.max_concurrent`` or ``n_jobs // 8``).
     mem_per_job_gb

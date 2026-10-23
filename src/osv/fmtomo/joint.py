@@ -300,7 +300,14 @@ class _Phase:
         row["dir"] = str(d)
         self.flags.extend(f"{self.label} iteration {it}: {f}" for f in fl)
         if self.keep:
-            for name in ("vgrids.in", "sources.in", "receivers.in", "stimes.dat", "mtimes.dat"):
+            for name in (
+                "vgrids.in",
+                "sources.in",
+                "receivers.in",
+                "stimes.dat",
+                "mtimes.dat",
+                "otimes.dat",
+            ):
                 if (run / name).exists():
                     _cp(run / name, d / name)
         if inv_log is not None and inv_log.exists():
@@ -559,6 +566,7 @@ def run_joint_inversion(
     mem_per_job_gb: float | None = None,
     stop_on_error: bool = True,
     on_iteration: Callable[[int, dict[str, object]], None] | None = None,
+    station_terms: dict[str, _inv.StationTermSpec] | None = None,
 ) -> JointInversionResult:
     """Joint P+S inversion with coupled relocation, the loop of ``tomo3dj`` (experimental).
 
@@ -578,6 +586,9 @@ def run_joint_inversion(
         script never calls it).
     on_iteration
         Callback ``(iter, summary)``; the summary has a ``phase`` key (``"P"``/``"S"``).
+    station_terms
+        Per phase (``"P"``, ``"S"``): iterate station terms between the iterations in that
+        phase's directory (:class:`osv.fmtomo.invert.StationTermSpec`).
 
     Returns
     -------
@@ -591,8 +602,12 @@ def run_joint_inversion(
     """
     if controls.joint is None:
         raise InversionError("controls hold no joint P+S setup (phases=['P','S'], nonlinear)")
+    if station_terms:
+        station_terms = {k: v.fresh() for k, v in station_terms.items()}
     root = Path(root)
     pd_, sd_ = root / DIR_P, root / DIR_S
+    # gridlocj's src.dat: blocks 1..n of the P stations, then the S stations
+    n_p_stations = len(_inv.read_sources(pd_ / "sourcesref.in")) if station_terms else 0
     for need in (
         root / "gridlocj.in",
         pd_ / "vgridsref.in",
@@ -629,6 +644,12 @@ def run_joint_inversion(
     def build(success: bool) -> JointInversionResult:
         wall = time.perf_counter() - t_start
         rp, rs = ph["P"].result(success, wall), ph["S"].result(success, wall)
+        for lab, r in (("P", rp), ("S", rs)):
+            spec = (station_terms or {}).get(lab)
+            if spec is not None:
+                r.station_terms = spec.table()
+                r.station_term_history = spec.history_table()
+                r.station_terms.to_csv(r.run_dir / "station_terms.csv", index=False)
         by_iter = {
             lab: p.result(success, wall).iterations.set_index("iter") for lab, p in ph.items()
         }
@@ -743,6 +764,16 @@ def run_joint_inversion(
             for lab, p in ph.items():
                 rms, info, inv_log = rec[lab]
                 p.record(it, rms, t0, info, reloc[lab], inv_log, on_iteration)
+            for lab, spec in (station_terms or {}).items():
+                if k < n_iter and spec.due(it):
+                    upd = _inv.update_station_terms(
+                        ph[lab].run,
+                        spec,
+                        it,
+                        src_dat=root / "src.dat",
+                        block_offset=0 if lab == "P" else n_p_stations,
+                    )
+                    upd.to_csv(ph[lab].dirs[it] / "station_terms.csv", index=False)
     except FmtomoFormatError as exc:
         err = InversionError(f"unreadable program output: {exc}")
         flags.append(f"error: {err}")

@@ -868,8 +868,12 @@ def relocate_3d(
     model_inputs_dir: str | Path | None = None,
     options: RelocateOptions | None = None,
     subset: str = "validation",
+    station_terms_3d: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, list[str]]:
     """Relocate events with FMTOMO, velocities fixed (linear source-only inversion).
+
+    ``station_terms_3d`` (``phase``, ``station``, ``term_s``: the iterated terms of the
+    inversion) are subtracted from the observed P times, as in the inversion.
 
     Returns ``(table, notes)``; ``table`` has ``event_id, lat, lon, depth_km, rms, n_picks`` and
     the per-pick residuals are kept in ``table.attrs['residuals']`` (columns ``event_id,
@@ -923,6 +927,19 @@ def relocate_3d(
     )
     data.observed = data.observed.iloc[order].reset_index(drop=True)
     data.mapping = data.mapping.iloc[order].reset_index(drop=True)
+    if station_terms_3d is not None and len(station_terms_3d):
+        tp = station_terms_3d[station_terms_3d["phase"] == "P"]
+        term = (
+            data.mapping["station"]
+            .astype(str)
+            .map(tp.set_index(tp["station"].astype(str))["term_s"])
+        )
+        t = data.observed["time"].to_numpy(float)
+        ok = t > 0
+        data.observed.loc[ok, "time"] = t[ok] - term.fillna(0.0).to_numpy(float)[ok]
+        notes.append(
+            f"3-D station terms of the inversion subtracted ({int(term.notna().sum())} picks)"
+        )
     fm = cfg.fmtomo.model_copy(
         update=dict(
             relocate="linear",
@@ -1027,6 +1044,7 @@ def relocate_validation(
     model_inputs_dir: str | Path | None = None,
     options: RelocateOptions | None = None,
     subset: str = "validation",
+    station_terms_3d: pd.DataFrame | None = None,
 ) -> ValidationResult:
     """Relocate the held-out events with the 1-D and the 3-D model and compare.
 
@@ -1057,6 +1075,8 @@ def relocate_validation(
         Stage 1 stations table (default: derived from the picks).
     subset
         ``events.split`` value to relocate (default ``"validation"``).
+    station_terms_3d
+        Iterated station terms of the 3-D inversion, applied to the 3-D relocation only.
 
     Returns
     -------
@@ -1087,6 +1107,7 @@ def relocate_validation(
         model_inputs_dir=model_inputs_dir,
         options=opt1,
         subset=subset,
+        station_terms_3d=station_terms_3d,
     )
     if phases != phases3:
         notes.append(f"phases {phases} requested; both relocations use {phases3} (P) for parity")
@@ -1097,7 +1118,7 @@ def relocate_validation(
         getattr(_cfg_section(cfg, "model3d"), "apply_velest_station_delays", False)
     )
     res.notes = notes
-    if not res.delays_applied_3d:
+    if not res.delays_applied_3d and station_terms_3d is None:
         res.findings.append(
             QCFinding(
                 "validation_3d_without_delays",

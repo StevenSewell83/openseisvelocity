@@ -260,3 +260,21 @@ def test_fm3d_real_project_extrusion_and_surface(tmp_path, capsys):
     with capsys.disabled():
         print(f"\nfm3d runtime {rt:.1f} s; grid {g.summary()}")
         print("\n".join(findings))
+
+
+def test_uncertainty_by_depth(grid):
+    from osv.model3d.extrude import by_depth_profile
+
+    cfg = ExtrusionUncertaintyConfig(mode="by_depth", by_depth=[(-1.0, 0.05), (0.5, 0.3)])
+    ds = extrude_1d(MODEL, grid, mode="layered", vpvs=1.7, uncertainty=cfg)
+    z = ds["depth"].to_numpy()
+    u = ds["vp_unc"].isel(lat=0, lon=0).to_numpy()
+    np.testing.assert_allclose(u, np.where(z < 0.5, 0.05, 0.3))
+    np.testing.assert_allclose(ds["vs_unc"], ds["vp_unc"])
+    assert ds.attrs["uncertainty_mode"] == "by_depth"
+    # above the first top: first value; at a top: that layer's value
+    np.testing.assert_allclose(by_depth_profile([-5.0, -1.0, 0.5, 9.0], cfg.by_depth),
+                               [0.05, 0.05, 0.3, 0.3])  # fmt: skip
+    for bad in ([], [(1.0, 0.1), (0.5, 0.2)], [(0.0, -0.1)]):
+        with pytest.raises(ValueError, match="by_depth"):
+            ExtrusionUncertaintyConfig(mode="by_depth", by_depth=bad)

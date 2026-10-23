@@ -327,8 +327,11 @@ model3d:
     # A priori uncertainty written to the vgrids.
     uncertainty:
       # 'constant': the same value everywhere; 'spread': half the p05-p95 spread of each 1-D
-      # layer (needs *_p05/*_p95 columns), bounded by min/max_km_s.
-      # Allowed: constant | spread
+      # layer (needs *_p05/*_p95 columns), bounded by min/max_km_s; 'by_depth': the values of
+      # by_depth by node depth. FMTOMO's damping acts through this a priori uncertainty, so a
+      # small value nearly fixes the nodes (e.g. shallow layers that would otherwise absorb
+      # station statics).
+      # Allowed: constant | spread | by_depth
       mode: constant
       # Uncertainty for mode 'constant', km/s.
       value_km_s: 0.3
@@ -336,6 +339,11 @@ model3d:
       min_km_s: 0.1
       # Upper bound for mode 'spread', km/s.
       max_km_s: 1.0
+      # For mode 'by_depth': [depth_top_km, uncertainty_km_s] pairs with ascending tops; each
+      # value applies from its top down to the next top, the first also above it (Vp and Vs).
+      by_depth: []
+      # Example:
+      #   by_depth: [[-1.0, 0.05], [0.5, 0.3]]
   # 'diagnostic': only report station delays; 'near_surface_layer': model them.
   # Allowed: diagnostic | near_surface_layer
   station_delays: diagnostic
@@ -520,9 +528,24 @@ fmtomo:
   # Save ray paths (rays.dat) in the forward runs.
   save_rays: true
   # FMTOMO has no station terms. 'preapply' subtracts per-station mean residuals (supplied to
-  # assemble_run_dir) from the observed times before inversion.
-  # Allowed: none | preapply
+  # assemble_run_dir) from the observed times before inversion. 'iterate' estimates P and S
+  # station terms in the 3-D model between the iterations (station_term_iteration) and subtracts
+  # them from the observed times; use it with model3d.apply_velest_station_delays: false and
+  # strongly damped shallow nodes (model3d.extrusion.uncertainty.mode: by_depth) so the terms,
+  # not the near-surface velocities, take the station statics.
+  # Allowed: none | preapply | iterate
   station_terms: none
+
+  # Settings of fmtomo.station_terms: iterate.
+  station_term_iteration:
+    # Update the terms after every n-th iteration.
+    every: 1
+    # First iteration after which the terms are updated.
+    start_iteration: 1
+    # Fraction of each station's mean residual added per update.
+    relaxation: 1.0
+    # Stations with fewer valid picks of a phase get no term for that phase.
+    min_picks: 5
 
   # Nonlinear relocation (Extras gridloc) settings.
   gridloc:

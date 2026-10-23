@@ -19,7 +19,11 @@ Open `report.html` first. A user model (grid, geology, wells; see `user_models.m
 - `model3d.grid.*` (`dx_km`, `dy_km`, `dz_km`, `pad_km`, `zmax_km`, `top_margin_km`, `max_memory_gb`),
   `propgrid_refine`, `source_refine_factor`, `source_refine_cells`.
 - `model3d.surface` (`dem`, `flat`, `station_elevations`), `surface_smoothing_km`, `inputs.dem`.
-- `model3d.apply_velest_station_delays`: subtract the Stage 2 delays from the observed times.
+- `model3d.apply_velest_station_delays`: subtract the Stage 2 delays from the observed times (turn off
+  when the inversion iterates its own station terms, `fmtomo.station_terms: iterate`).
+- `model3d.extrusion.uncertainty`: a priori model uncertainty of `vgrids.in` (`constant`, `spread`, or
+  `by_depth` pairs `[depth_top_km, km_s]`); FMTOMO's damping acts through it, so small values nearly fix
+  the nodes (e.g. the shallow nodes when station terms are iterated).
 - `model3d.velest_station_delays_exclude`: stations (list of codes/aliases, or `borehole`) whose delays are not subtracted.
 - `model3d.checks.*`: thresholds for Vp, Vp/Vs and the velocity gradient.
 - `fmtomo.phases`: S data are written when it contains `S` or `vpvs`.

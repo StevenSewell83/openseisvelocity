@@ -276,12 +276,38 @@ def _signature(
     return sig
 
 
+def _station_terms(
+    fm: Any, otimes: pd.DataFrame, stations_are_sources: bool, event_ids: Any
+) -> _inv.StationTermSpec | None:
+    """Same station-term procedure as the real inversion (``fmtomo.station_terms: iterate``)."""
+    if getattr(fm, "station_terms", "none") != "iterate":
+        return None
+    o = otimes.reset_index(drop=True)
+    if stations_are_sources:
+        station, event = o["source"].to_numpy(), np.asarray(event_ids)
+    else:
+        station, event = o["receiver"].to_numpy(), o["source"].to_numpy()
+    opt = fm.station_term_iteration
+    return _inv.StationTermSpec(
+        station=station,
+        event=event,
+        every=int(opt.every),
+        start_iteration=int(opt.start_iteration),
+        relaxation=float(opt.relaxation),
+        min_picks=int(opt.min_picks),
+    )
+
+
 def _test_context(
     test: ResolutionTest, grid: ModelGrid, background: xr.Dataset, cfg: Any, uncertainty: float
 ) -> dict[str, Any]:
     """Synthetic-data settings and a digest of the true model (input models are objects)."""
     rc = getattr(cfg, "resolution", None)
     synth: dict[str, Any] = {"uncertainty": float(uncertainty)}
+    fm = getattr(cfg, "fmtomo", None)
+    if fm is not None and getattr(fm, "station_terms", "none") != "none":
+        synth["station_terms"] = fm.station_terms
+        synth["station_term_iteration"] = fm.station_term_iteration.model_dump(mode="json")
     if rc is not None:
         for k in ("noise", "hypocentre_noise_km"):
             v = getattr(rc, k, None)
@@ -455,6 +481,7 @@ def _run_test(
             mem_per_job_gb=mem_per_job_gb,
             stop_on_error=False,
             phase=test.phase,
+            station_terms=_station_terms(fm, otimes, ctl.stations_are_sources, base.event_ids),
         )
         tab = res.iterations
         flags = list(res.flags)

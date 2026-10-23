@@ -851,14 +851,35 @@ class UserModelConfig(_Base):
 class ExtrusionUncertaintyConfig(_Base):
     """A priori model uncertainty (second column of ``vgrids.in``, std in km/s)."""
 
-    mode: Literal["constant", "spread"] = F(
+    mode: Literal["constant", "spread", "by_depth"] = F(
         "constant",
         "'constant': the same value everywhere; 'spread': half the p05-p95 spread of each "
-        "1-D layer (needs *_p05/*_p95 columns), bounded by min/max_km_s.",
+        "1-D layer (needs *_p05/*_p95 columns), bounded by min/max_km_s; 'by_depth': the "
+        "values of by_depth by node depth. FMTOMO's damping acts through this a priori "
+        "uncertainty, so a small value nearly fixes the nodes (e.g. shallow layers that would "
+        "otherwise absorb station statics).",
     )
     value_km_s: float = F(0.3, "Uncertainty for mode 'constant', km/s.", gt=0)
     min_km_s: float = F(0.1, "Lower bound for mode 'spread', km/s.", gt=0)
     max_km_s: float = F(1.0, "Upper bound for mode 'spread', km/s.", gt=0)
+    by_depth: list[tuple[float, float]] = F(
+        [],
+        "For mode 'by_depth': [depth_top_km, uncertainty_km_s] pairs with ascending tops; each "
+        "value applies from its top down to the next top, the first also above it (Vp and Vs).",
+        example="by_depth: [[-1.0, 0.05], [0.5, 0.3]]",
+    )
+
+    @model_validator(mode="after")
+    def _check(self) -> ExtrusionUncertaintyConfig:
+        if self.mode == "by_depth":
+            if not self.by_depth:
+                raise ValueError("by_depth: needs at least one [depth_top_km, km_s] pair")
+            tops = [t for t, _ in self.by_depth]
+            if any(b <= a for a, b in zip(tops, tops[1:], strict=False)):
+                raise ValueError("by_depth: depth tops must be strictly ascending")
+            if any(v <= 0 for _, v in self.by_depth):
+                raise ValueError("by_depth: uncertainties must be > 0 km/s")
+        return self
 
 
 class ExtrusionConfig(_Base):
@@ -999,6 +1020,19 @@ class TradeoffConfig(_Base):
     )
 
 
+class StationTermIterationConfig(_Base):
+    """Station terms estimated between FMTOMO iterations (``fmtomo.station_terms: iterate``)."""
+
+    every: int = F(1, "Update the terms after every n-th iteration.", ge=1)
+    start_iteration: int = F(1, "First iteration after which the terms are updated.", ge=1)
+    relaxation: float = F(
+        1.0, "Fraction of each station's mean residual added per update.", gt=0, le=1
+    )
+    min_picks: int = F(
+        5, "Stations with fewer valid picks of a phase get no term for that phase.", ge=1
+    )
+
+
 class GridlocConfig(_Base):
     """Extras ``gridloc``: grid search over the whole propagation grid.
 
@@ -1080,10 +1114,18 @@ class FmtomoConfig(_Base):
         0.07, "Minimum distance between interfaces kept by invert3d, km.", ge=0
     )
     save_rays: bool = F(True, "Save ray paths (rays.dat) in the forward runs.")
-    station_terms: Literal["none", "preapply"] = F(
+    station_terms: Literal["none", "preapply", "iterate"] = F(
         "none",
         "FMTOMO has no station terms. 'preapply' subtracts per-station mean residuals "
-        "(supplied to assemble_run_dir) from the observed times before inversion.",
+        "(supplied to assemble_run_dir) from the observed times before inversion. 'iterate' "
+        "estimates P and S station terms in the 3-D model between the iterations "
+        "(station_term_iteration) and subtracts them from the observed times; use it with "
+        "model3d.apply_velest_station_delays: false and strongly damped shallow nodes "
+        "(model3d.extrusion.uncertainty.mode: by_depth) so the terms, not the near-surface "
+        "velocities, take the station statics.",
+    )
+    station_term_iteration: StationTermIterationConfig = FF(
+        StationTermIterationConfig, "Settings of fmtomo.station_terms: iterate."
     )
     gridloc: GridlocConfig = FF(GridlocConfig, "Nonlinear relocation (Extras gridloc) settings.")
     joint: JointVpVsConfig = FF(

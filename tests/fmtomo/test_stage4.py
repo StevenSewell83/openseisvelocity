@@ -18,6 +18,7 @@ from osv.io.fmtomo import (
     Receivers,
     Source,
     read_observed,
+    read_sources,
     read_vgrids,
 )
 from osv.model3d.grid import define_grid
@@ -533,3 +534,65 @@ def test_tradeoff_cache_invalidated_by_new_upstream(tmp_path):
     (tmp_path / "P").mkdir()
     _invalidate_stale_sweeps(tmp_path, "run2", fm2)  # new build_model run: wiped
     assert not (tmp_path / "P").exists()
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _have_tools(), reason="FMTOMO binaries not built")
+def test_iterated_station_terms_recover_statics(workdir):
+    """Synthetic statics added to the data come back as station terms (nonlinear relocation)."""
+    from osv.fmtomo.rundir import RunInputs
+
+    try:
+        which_tool("gridloc")
+    except ToolNotFoundError:
+        pytest.skip("gridloc not built")
+    grid, base = _setup(n_src=25)
+    bg = checkerboard(grid, 5.0, 2.0, 0.0)
+    cfg = ResolutionConfig(noise={"scale": 0.1})
+    data = make_synthetic_data(bg, grid, base, workdir / "synth", cfg, seed=3, n_jobs=4)
+    obs = read_observed(data.otimes)
+    rng = np.random.default_rng(1)
+    n_st = len(base.receivers.positions)
+    static = rng.normal(0, 0.04, n_st)
+    static -= static.mean()
+    ok = obs["time"] > 0
+    obs.loc[ok, "time"] += static[obs.loc[ok, "receiver"].to_numpy() - 1]
+    inputs = RunInputs(
+        write_vgrids(grid, bg, with_s=False, uncertainty=0.05),
+        base.interfaces,
+        base.propgrid,
+        read_sources(data.true_sources),
+        base.receivers,
+        obs,
+    )
+    mp = st.default_mapping(inputs.otimes)
+    mp["station"] = "S" + mp["receiver_idx"].astype(str)
+    inputs, mp = st.to_nonlinear_geometry(inputs, mp)
+    pdata = st.PhaseData(
+        "P",
+        inputs,
+        mp,
+        st.ModelInfo.from_model(inputs.grids, sources=inputs.sources, receivers=inputs.receivers),
+        True,
+    )
+    rms = {}
+    for terms in ("none", "iterate"):
+        fm = FmtomoConfig(
+            package="extras",
+            relocate="nonlinear",
+            iterations=4,
+            subspace_dimension=20,
+            save_rays=False,
+            station_terms=terms,
+        )
+        oc = st.invert_phase(workdir / terms, pdata, fm, 50.0, 50.0, n_jobs=4, dws_threshold=1.0)
+        rms[terms] = float(oc.iterations["rms_ms"].iloc[-1])
+        if terms == "iterate":
+            t = oc.result.station_terms.set_index("station")["term_s"]
+            true = pd.Series(static, index=[f"S{i}" for i in range(1, n_st + 1)])
+            true = true[t.index]
+            assert np.corrcoef(t, true)[0, 1] > 0.9
+            assert float(np.sqrt(np.mean((t - (true - true.mean())) ** 2))) < 0.012
+            assert (oc.run_dir / "station_terms.csv").exists()
+            assert (oc.run_dir / "iterations" / "01" / "station_terms.csv").exists()
+    assert rms["iterate"] < 0.7 * rms["none"]
